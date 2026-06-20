@@ -1,9 +1,13 @@
 # Vibird — Design
 
+> Language: **English** · [中文](../zh/design.md)
+
 > **Vibird** is a zero-config, cross-agent **voice + status companion for vibe coding**.
-> A tiny desktop creature you talk to: hold-to-speak your intent → it feeds your words to your
+> A tiny desktop companion you talk to: hold-to-speak your intent → it feeds your words to your
 > AI coding agent (Claude Code first; Cursor / Codex next); it shows the agent's live state with
 > high-refresh, expressive animation; you physically approve / deny risky actions.
+> The on-device character is **Liz「栗子」**, a 2D-anime companion (see
+> [ADR-0005](../../agent/adr/ADR-0005-character-liz.md)).
 
 Status: **design draft** (2026-06). License: **AGPL-3.0 + commercial** (Ultralytics-style dual license; see `LICENSE` / `README`).
 
@@ -45,8 +49,8 @@ head-on collision with the platform owner → e-waste.
    ┌───────────────────────────────┐    WiFi /      ┌──────────────────────────┐  hooks  ┌────────────┐
    │ • hold-to-talk → 16k PCM ──────┼── WebSocket ──▶│ WS server (device dials in)│── MCP ─▶│ Claude Code│
    │ • high-refresh state animation │   (binary)     │ dual-engine ASR            │  tmux   │ (Cursor /  │
-   │ • button + IMU input           │◀── state ──────│ Claude Code integration    │◀────────│  Codex →)  │
-   │ • RGB / speaker                │   push         │ mDNS-advertised            │ approve └────────────┘
+   │   (Liz emotes)                 │◀── state ──────│ Claude Code integration    │◀────────│  Codex →)  │
+   │ • button + IMU input           │   push         │ mDNS-advertised            │ approve └────────────┘
    └───────────────────────────────┘                └──────────────────────────┘
    not bound to S3R: any device speaking          ships as: `cargo install` + `pip install` (PyO3/maturin)
    the Vibird protocol works                      + a one-command Claude Code plugin
@@ -77,63 +81,106 @@ Three layers:
 
 ---
 
-## 3. Tech stack
+## 3. Character — Liz「栗子」
 
-- **Host (Rust):** `tokio`, `tungstenite`/`axum` (WS), `rmcp` (MCP), whisper/parakeet bindings, the CLI.
-  Shipped as a **pip wheel via PyO3 + maturin** *and* `cargo install`. This is the reusable core.
-- **Firmware (Rust):** **esp-rs / `esp-hal`** (no_std, bare-metal, pure Rust) on ESP32-S3.
-  `embedded-graphics` + a DMA double-buffered framebuffer for the **60 fps animation**; `esp-wifi` + a WS client;
-  I2S + ES8311 codec driver; BMI270 IMU; RGB. **Not Zephyr** (see ADR-0002): on ESP32-S3 with WiFi+audio+display,
-  esp-rs is the more proven *pure-Rust* path; Zephyr-Rust + Zephyr-ESP32-WiFi + LVGL-FFI stacks three
-  bleeding-edge layers and still isn't pure Rust.
-- **Distribution:** a Claude Code **plugin** (hooks + skills + root `.mcp.json`, one-command install) +
-  `pip install vibird` (the bridge) + `cargo install vibird`.
-- **License:** **AGPL-3.0** (community) + **commercial license** (Ultralytics model) + **CLA**. All dependencies
-  kept permissive (MIT/Apache/BSD) so commercial relicensing stays clean.
-- **Build network:** crates.io / PyPI reachable directly via the router's transparent proxy (rsproxy / Tsinghua
-  mirrors as fallback). GitHub reachable (repo + esp toolchain).
+The device's face is **Liz「栗子」** — a **17-year-old 2D-anime girl** (full art bible in
+[ADR-0005](../../agent/adr/ADR-0005-character-liz.md)):
+
+- **Hair:** black, medium-long, straight (黑中长直).
+- **Wardrobe:** loves **Lolita「女儿服」** and **JK sailor uniforms (水手服)**.
+- **Framing:** **half-body (bust)** on the 128×128 screen.
+- **Motion:** **telegram-sticker-smooth**, one emote per agent state plus transitions.
+
+Positioning: everyone is building robots; Vibird's face goes the **2D-anime companion** route, not a
+robot/pet. "Vibird" is the product/brand name; **Liz「栗子」is the mascot character**. The emote set maps 1:1
+to the `AgentState` enum (idle / listening / thinking / working / awaiting / done / error).
 
 ---
 
-## 4. Roadmap
+## 4. Rendering & emote pipeline
+
+The firmware is **pure Rust** (esp-hal, no_std; see
+[ADR-0002](../../agent/adr/ADR-0002-firmware-rust-esp-rs.md),
+[ADR-0004](../../agent/adr/ADR-0004-on-device-rendering.md)). We borrow the *technique* from Espressif's emote
+stack (region-flush, pre-decoded RGB565 frames, named intro/loop/tail clips) but the **format and tooling are
+ours**:
+
+- **Vibird Emote Pack (`.veap`)** — our binary pack: header + manifest (named clips, layout, segment plans) +
+  per-clip frames in **RGB565 with per-region delta** (store/flush only changed rectangles → ≈2× faster than
+  decoding GIF, i.e. the "telegram-smooth" feel).
+- **Host packer (Rust)** — `vibird-emote-pack`: GIF / PNG-sequence (Liz's art) → `.veap`. CLI first, then a
+  wasm in-browser packer.
+- **Firmware player (Rust, esp-hal no_std)** — mmap the pack from a flash partition, play a clip by name,
+  flush only dirty rects to the GC9107. Reuses the confirmed `ColorOrder::Bgr` / `ColorInversion::Normal` /
+  `offset_y = 32` ([finding](../../agent/findings/finding-gc9107-color-order.md), hardware-confirmed).
+- The hand-coded anti-aliased vector renderer is demoted to a **no-assets fallback / boot animation**.
+
+> Measured: 99 fps (pixel) / ~53 fps (vector)
+> ([finding](../../agent/findings/finding-rust-animation-feasibility.md)) — the pure-Rust high-refresh risk is
+> closed.
+
+---
+
+## 5. Tech stack
+
+- **Host (Rust):** `tokio`, `tungstenite`/`axum` (WS), `rmcp` (MCP), whisper/parakeet bindings, the CLI, and
+  the `vibird-emote-pack` packer. Shipped as a **pip wheel via PyO3 + maturin** *and* `cargo install`. The
+  reusable core.
+- **Firmware (Rust):** **esp-rs / `esp-hal`** (no_std, bare-metal, pure Rust) on ESP32-S3. `embedded-graphics`
+  + a DMA double-buffered framebuffer + our `.veap` region-flush player; `esp-wifi` + a WS client; I2S +
+  ES8311 codec; BMI270 IMU; RGB. **Not Zephyr** (see ADR-0002).
+- **Distribution:** a Claude Code **plugin** (hooks + skills + root `.mcp.json`, one-command install) +
+  `pip install vibird` (the bridge) + `cargo install vibird`.
+- **License:** **AGPL-3.0** (community) + **commercial license** (Ultralytics model) + **CLA**. All
+  dependencies kept permissive (MIT/Apache/BSD) so commercial relicensing stays clean.
+- **Build network:** crates.io / PyPI reachable directly via the router's transparent proxy (rsproxy /
+  Tsinghua mirrors as fallback). GitHub reachable.
+
+---
+
+## 6. Roadmap
 
 | Version | Deliverable |
 |---|---|
-| **v0.1 Voice loop** | S3R hold-to-talk → injected into Claude Code; basic idle/listening/thinking animation. **De-risking spikes:** (1) pure-Rust animation on real S3R — ✅ **done** (99 fps pixel / 53 fps AA vector, [finding](findings/finding-rust-animation-feasibility.md)); (2) esp-wifi WebSocket audio streaming reliability — ⏳ open. |
+| **v0.1 Voice loop** | S3R hold-to-talk → injected into Claude Code; basic idle/listening/thinking emotes. **De-risking spikes:** (1) pure-Rust animation on real S3R — ✅ **done** (99/53 fps); (2) esp-wifi WebSocket audio streaming reliability — ⏳ open. |
 | **v0.2 Status + physical approve** | Hooks push agent state to the device; `PreToolUse` physical allow/deny. |
 | **v0.3 Zero-config** | Claude Code plugin + pip package; the agent configures the device. **← the soul.** |
 | **v0.4 Cross-agent** | Cursor / Codex adapters. |
-| **v0.5 Commercial-grade** | Animation polish, AGPL/CLA/docs site, OTA, offline degradation, packaging. |
+| **v0.5 Commercial-grade** | Liz emote polish, AGPL/CLA/docs site, OTA, offline degradation, packaging. |
 
 ---
 
-## 5. Repository layout (monorepo)
+## 7. Repository layout (monorepo)
 
 ```
 vibird/
-├── firmware/        # Rust (esp-hal) — S3R reference client
-├── host/            # Rust workspace — core / bridge / cli / mcp  (the product core)
+├── firmware/        # Rust (esp-hal) — S3R reference client + .veap player
+├── host/            # Rust workspace — core / bridge / cli / mcp / emote packer  (the product core)
 ├── python/          # PyO3 + maturin wrapper → `pip install vibird`
 ├── claude-plugin/   # Claude Code plugin (hooks / skills / .mcp.json)
 ├── protocol/        # device ↔ bridge protocol spec (versioned)
-├── docs/            # design + ADRs (+ research/)
-└── assets/          # art, character sprites
+├── docs/            # agent line (SNAPSHOT/ADRs/findings) + human line (bilingual)
+└── assets/          # art, Liz emote source
 ```
 
 ---
 
-## 6. Open risks — spike early
+## 8. Open risks — spike early
 
-1. **esp-wifi reliability** for sustained WS audio streaming (fallback: `esp-idf-svc` / ESP-IDF WiFi, still Rust).
-2. ~~**60 fps pure-Rust animation** on the GC9107~~ — ✅ **resolved on hardware**: 99 fps pixel / 53 fps AA vector ([finding-rust-animation-feasibility](findings/finding-rust-animation-feasibility.md)). The panel also needed a colour-order fix ([finding-gc9107-color-order](findings/finding-gc9107-color-order.md)).
-3. **Prompt-injection ergonomics** (tmux requirement in v0.1; cleaner SDK path later).
-4. **Chinese / code-switch ASR** quality (dual engine; cloud fallback).
+1. **esp-wifi reliability** for sustained WS audio streaming (fallback: `esp-idf-svc` / ESP-IDF WiFi, still Rust). **Open.**
+2. ~~**60 fps pure-Rust animation** on the GC9107~~ — ✅ **resolved on hardware** (99/53 fps); the colour pipeline is fixed + confirmed too.
+3. **Our own emote pipeline** — the `.veap` format + packer + region-flush player are all to be written from scratch (pure-Rust own-format chosen).
+4. **Prompt-injection ergonomics** (tmux requirement in v0.1; cleaner SDK path later).
+5. **Chinese / code-switch ASR** quality (dual engine; cloud fallback).
+6. **Liz art production** (Live2D / commission / AI) — the next pending decision.
 
 ---
 
-## 7. Research basis
+## 9. Research basis
 
-Three parallel research tracks (Claude Code integration · market & feature mining · technical selection), 2026-06,
-with adversarial multi-source verification of load-bearing claims. Key sources: Claude Code docs
+Three parallel research tracks (Claude Code integration · market & feature mining · technical selection),
+2026-06, with adversarial multi-source verification of load-bearing claims. Key sources: Claude Code docs
 (hooks / mcp / plugins), `anthropics/claude-desktop-buddy`, Open ASR Leaderboard, `esp_websocket_client`
-changelog, `parakeet-mlx`. Full notes to be archived under `docs/research/`.
+changelog, `parakeet-mlx`; the emote pipeline borrows the region-flush technique from Espressif's
+`esp_emote_gen_player` (Apache-2.0). Source-verified hardware pinout:
+[atoms3r-hardware](../../agent/atoms3r-hardware.md).

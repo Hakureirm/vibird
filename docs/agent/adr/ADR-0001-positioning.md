@@ -13,7 +13,7 @@ superseded_by: []
 
 ## Context
 
-A 2026-06 market scan (archived under `docs/research/`) found the obvious idea — a *Claude desk pet with
+A 2026-06 market scan (key sources cited below) found the obvious idea — a *Claude desk pet with
 on-device approve/deny* — is **already officially owned by Anthropic** (`anthropics/claude-desktop-buddy`:
 ESP32 + BLE; sleeps/wakes/shows impatience; on-device approve-deny) with a commercial product and 6+
 community ports. Cloning it means a head-on collision with the platform owner. The scan also found three
@@ -38,8 +38,9 @@ the three gaps the scan found empty:
 - **C — Zero-config (the soul).** `pip install`, then the agent reads a bundled skill and configures the
   device itself. No competitor does this.
 
-The cute high-refresh animation is the device's **face** (ambient agent-state display), not the
-differentiator — it makes the status legible, it is not "another pet".
+The cute high-refresh animation is the device's **face** (ambient agent-state display, embodied by the
+mascot Liz「栗子」, see [ADR-0005](ADR-0005-character-liz.md)) — it makes the status legible; it is not
+"another pet".
 
 **Design laws** (from the winners-vs-e-waste analysis, non-negotiable): narrow + reliable · passive-first ·
 zero-config · never brick (open protocol, OTA, offline degrade) · only make noise when it matters ·
@@ -52,9 +53,10 @@ price band $49–120.
 - Each gap maps to a concrete deliverable (voice loop, cross-agent adapters, the install plugin).
 
 ### Negative / Risk
-- Three gaps = more surface than a single-feature gadget; must stage tightly (DESIGN §4 roadmap).
+- Three gaps = more surface than a single-feature gadget; must stage tightly (the roadmap in the design doc).
 - "Cross-agent" depends on each agent's integration surface (Claude Code is strongest; others vary).
 
 ## Cross-references
-- `docs/DESIGN.md` (full design), `docs/research/` (market scan), [ADR-0003](ADR-0003-device-bridge-protocol.md),
-  [ADR-0004](ADR-0004-on-device-rendering.md).
+- [full design](../../human/en/design.md), [atoms3r-hardware](../atoms3r-hardware.md) (hardware reference),
+  [ADR-0003](ADR-0003-device-bridge-protocol.md), [ADR-0004](ADR-0004-on-device-rendering.md),
+  [ADR-0005](ADR-0005-character-liz.md).

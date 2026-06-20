@@ -20,8 +20,8 @@ push agent-state down to the device, on an ESP32-S3 whose WebSocket libraries ar
 ## Options considered
 
 1. **Device as WebSocket server.** Rejected — every ESP32 WS *server* library path is the buggy one
-   (crashes on new clients, silent frame drops, long-run stalls; see `docs/research/atoms3r-hardware.md`
-   and the tech-selection research).
+   (crashes on new clients, silent frame drops, long-run stalls; see
+   [atoms3r-hardware](../atoms3r-hardware.md) and the tech-selection research).
 2. **Device as WebSocket client + mDNS discovery (chosen).** ESP32 WS *client* is mature; the device
    survives WiFi changes and dials in; NAT/discovery is simpler.
 3. **MQTT broker / cloud relay.** Rejected for v1 — adds an external dependency (and the "GFW: home can't
@@ -52,4 +52,4 @@ push agent-state down to the device, on an ESP32-S3 whose WebSocket libraries ar
 
 ## Cross-references
 - `protocol/PROTOCOL.md`, `protocol/src/lib.rs` (`vibird-protocol`), [ADR-0001](ADR-0001-positioning.md),
-  `docs/research/atoms3r-hardware.md`.
+  [atoms3r-hardware](../atoms3r-hardware.md).

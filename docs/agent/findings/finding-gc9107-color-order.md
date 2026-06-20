@@ -38,8 +38,13 @@ unaffected by the R↔B swap while the coloured body was wrong — which is exac
 
 **Fix (in `eb40d35`):** `.color_order(ColorOrder::Bgr)` + `.invert_colors(ColorInversion::Normal)` in the
 mipidsi builder. (Some AtomS3R units ship ST7735S instead of GC9107 — if a unit shows nothing, switch the
-model; colour-order finding still applies.)
+model; the colour-order finding still applies.)
+
+## Confirmation
+**2026-06-21 — confirmed on hardware** by the user after flashing the BGR fix: *"颜色对了现在"* (the colours
+are correct now). All colours render true; the "black belly" is gone. The colour pipeline is closed
+end-to-end: diagnosis → fix → on-device verification.
 
 ## Cross-references
 [ADR-0004](../adr/ADR-0004-on-device-rendering.md), [ADR-0002](../adr/ADR-0002-firmware-rust-esp-rs.md),
-`docs/research/atoms3r-hardware.md`.
+[atoms3r-hardware](../atoms3r-hardware.md).
