@@ -1,9 +1,9 @@
-//! Vibird firmware — animation spike (v0.1 de-risk).
+//! Vibird firmware — animation spike (v0.3: smooth anti-aliased vector style).
 //!
-//! Goal: prove we can drive the AtomS3R's GC9107 display from pure Rust (esp-hal) at a smooth frame
-//! rate, with the LP5562 backlight, before committing the full firmware. Draws a bouncing + blinking
-//! blob into an off-screen framebuffer and flushes the whole frame each loop, logging FPS over USB.
-//! (The cute "Vibird" character art comes once the pipeline is verified on hardware.)
+//! Verified at high FPS on real hardware. This iteration drops pixel-art for a clean, anti-aliased
+//! vector look that suits the colour LCD: soft-edged rounded shapes composited with coverage-based AA
+//! (no sqrt — squared-distance edges), a precomputed gradient backdrop, gentle breathing, and smooth
+//! blinks. No fake drop-shadows. ESP32-S3 has an FPU, so the per-pixel f32 math is cheap.
 //!
 //! Pins (source-verified — see docs/research/atoms3r-hardware.md):
 //!   Display GC9107 (SPI2): SCLK=15, MOSI=21, CS=14, DC=42, RST=48; 40 MHz; panel 128x128, offset_y=32.
@@ -14,11 +14,8 @@
 
 extern crate alloc;
 
-use embedded_graphics::{
-    pixelcolor::Rgb565,
-    prelude::*,
-    primitives::{Circle, PrimitiveStyle},
-};
+use alloc::vec::Vec;
+use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_backtrace as _;
 use esp_hal::{
@@ -33,50 +30,160 @@ use esp_hal::{
     },
     time::{Duration, Instant, Rate},
 };
+use libm::sinf;
 use log::info;
-use mipidsi::{interface::SpiInterface, models::GC9107, options::ColorInversion, Builder};
+use mipidsi::{
+    interface::SpiInterface,
+    models::GC9107,
+    options::{ColorInversion, ColorOrder},
+    Builder,
+};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
-const W: u16 = 128;
-const H: u16 = 128;
+const W: i32 = 128;
+const H: i32 = 128;
 const LP5562_ADDR: u8 = 0x30;
 
-/// Off-screen 128x128 Rgb565 framebuffer for tear-free, fast full-frame updates.
-struct FrameBuf {
-    px: alloc::vec::Vec<Rgb565>,
+#[inline]
+fn clamp01(x: f32) -> f32 {
+    if x < 0.0 { 0.0 } else if x > 1.0 { 1.0 } else { x }
 }
-impl FrameBuf {
+
+/// Blend two Rgb565 colours in 5/6/5 space.
+#[inline]
+fn lerp_col(a: Rgb565, b: Rgb565, t: f32) -> Rgb565 {
+    let t = clamp01(t);
+    let r = a.r() as f32 + (b.r() as f32 - a.r() as f32) * t;
+    let g = a.g() as f32 + (b.g() as f32 - a.g() as f32) * t;
+    let bl = a.b() as f32 + (b.b() as f32 - a.b() as f32) * t;
+    Rgb565::new((r + 0.5) as u8, (g + 0.5) as u8, (bl + 0.5) as u8)
+}
+
+/// Off-screen 128x128 framebuffer.
+struct Fb {
+    px: Vec<Rgb565>,
+}
+impl Fb {
     fn new() -> Self {
-        Self { px: alloc::vec![Rgb565::BLACK; W as usize * H as usize] }
+        Self { px: alloc::vec![Rgb565::BLACK; (W * H) as usize] }
     }
-    fn clear(&mut self, c: Rgb565) {
-        self.px.iter_mut().for_each(|p| *p = c);
+    #[inline]
+    fn idx(x: i32, y: i32) -> usize {
+        (y * W + x) as usize
     }
-}
-impl DrawTarget for FrameBuf {
-    type Color = Rgb565;
-    type Error = core::convert::Infallible;
-    fn draw_iter<I: IntoIterator<Item = Pixel<Rgb565>>>(&mut self, pixels: I) -> Result<(), Self::Error> {
-        for Pixel(pt, c) in pixels {
-            if (0..W as i32).contains(&pt.x) && (0..H as i32).contains(&pt.y) {
-                self.px[pt.y as usize * W as usize + pt.x as usize] = c;
-            }
+    /// Alpha-blend `col` at (x,y) with coverage `a`.
+    #[inline]
+    fn blend(&mut self, x: i32, y: i32, col: Rgb565, a: f32) {
+        if a <= 0.0 || x < 0 || x >= W || y < 0 || y >= H {
+            return;
         }
-        Ok(())
+        let i = Self::idx(x, y);
+        self.px[i] = if a >= 1.0 { col } else { lerp_col(self.px[i], col, a) };
     }
 }
-impl OriginDimensions for FrameBuf {
-    fn size(&self) -> Size {
-        Size::new(W as u32, H as u32)
+
+/// Anti-aliased filled ellipse (coverage from squared distance — no sqrt).
+fn ellipse(fb: &mut Fb, cx: f32, cy: f32, rx: f32, ry: f32, col: Rgb565, alpha: f32) {
+    let edgek = rx.min(ry) * 0.5; // ~1px AA band
+    let x0 = (cx - rx - 1.0) as i32;
+    let x1 = (cx + rx + 1.0) as i32;
+    let y0 = (cy - ry - 1.0) as i32;
+    let y1 = (cy + ry + 1.0) as i32;
+    for y in y0..=y1 {
+        for x in x0..=x1 {
+            let dx = (x as f32 + 0.5 - cx) / rx;
+            let dy = (y as f32 + 0.5 - cy) / ry;
+            let d2 = dx * dx + dy * dy;
+            let cov = clamp01((1.0 - d2) * edgek + 0.5);
+            fb.blend(x, y, col, cov * alpha);
+        }
     }
+}
+
+#[inline]
+fn disc(fb: &mut Fb, cx: f32, cy: f32, r: f32, col: Rgb565, alpha: f32) {
+    ellipse(fb, cx, cy, r, r, col, alpha);
+}
+
+/// AA filled triangle (2x2 supersample) — used for the little beak.
+fn tri(fb: &mut Fb, p: [(f32, f32); 3], col: Rgb565) {
+    let minx = (p[0].0.min(p[1].0).min(p[2].0) - 1.0) as i32;
+    let maxx = (p[0].0.max(p[1].0).max(p[2].0) + 1.0) as i32;
+    let miny = (p[0].1.min(p[1].1).min(p[2].1) - 1.0) as i32;
+    let maxy = (p[0].1.max(p[1].1).max(p[2].1) + 1.0) as i32;
+    let edge = |ax: f32, ay: f32, bx: f32, by: f32, px: f32, py: f32| {
+        (px - ax) * (by - ay) - (py - ay) * (bx - ax)
+    };
+    for y in miny..=maxy {
+        for x in minx..=maxx {
+            let mut cov = 0.0f32;
+            for &sy in &[0.25f32, 0.75] {
+                for &sx in &[0.25f32, 0.75] {
+                    let px = x as f32 + sx;
+                    let py = y as f32 + sy;
+                    let d0 = edge(p[0].0, p[0].1, p[1].0, p[1].1, px, py);
+                    let d1 = edge(p[1].0, p[1].1, p[2].0, p[2].1, px, py);
+                    let d2 = edge(p[2].0, p[2].1, p[0].0, p[0].1, px, py);
+                    if (d0 >= 0.0 && d1 >= 0.0 && d2 >= 0.0) || (d0 <= 0.0 && d1 <= 0.0 && d2 <= 0.0) {
+                        cov += 0.25;
+                    }
+                }
+            }
+            fb.blend(x, y, col, cov);
+        }
+    }
+}
+
+/// Draw the Vibird character at animation time `t` (seconds).
+fn draw_vibird(fb: &mut Fb, t: f32) {
+    // palette
+    let body = Rgb565::new(14, 47, 31);
+    let cream = Rgb565::new(31, 61, 30);
+    let eye = Rgb565::new(2, 6, 8);
+    let beak = Rgb565::new(31, 42, 6);
+    let cheek = Rgb565::new(31, 30, 21);
+
+    let bob = sinf(t * 2.3) * 3.0;
+    let cx = 64.0;
+    let cy = 62.0 + bob;
+    let breath = 1.0 + sinf(t * 2.3) * 0.02;
+
+    // smooth blink: a quick dip every ~3 s
+    let cyc = {
+        let v = t * 0.33;
+        v - libm::floorf(v)
+    };
+    let closed = if cyc < 0.07 { sinf(cyc / 0.07 * core::f32::consts::PI) } else { 0.0 };
+    let ery = 9.0 * (1.0 - 0.9 * closed);
+
+    // body (flat, clean — no outline, no shadow)
+    ellipse(fb, cx, cy, 35.0, 39.0 * breath, body, 1.0);
+    // belly / chest
+    ellipse(fb, cx, cy + 17.0, 24.0, 22.0, cream, 1.0);
+    // cheeks (soft blush)
+    disc(fb, cx - 22.0, cy + 2.0, 6.5, cheek, 0.5);
+    disc(fb, cx + 22.0, cy + 2.0, 6.5, cheek, 0.5);
+    // eyes (glossy, with catchlight) — blink squashes ery
+    ellipse(fb, cx - 14.0, cy - 8.0, 9.0, ery, eye, 1.0);
+    ellipse(fb, cx + 14.0, cy - 8.0, 9.0, ery, eye, 1.0);
+    if ery > 4.0 {
+        disc(fb, cx - 17.0, cy - 11.0, 2.6, Rgb565::WHITE, 0.95);
+        disc(fb, cx + 11.0, cy - 11.0, 2.6, Rgb565::WHITE, 0.95);
+    }
+    // little beak (downward triangle), just under the eyes
+    tri(
+        fb,
+        [(cx, cy + 2.0), (cx - 5.0, cy - 4.0), (cx + 5.0, cy - 4.0)],
+        beak,
+    );
 }
 
 #[main]
 fn main() -> ! {
     esp_println::logger::init_logger_from_env();
     let p = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
-    esp_alloc::heap_allocator!(size: 110 * 1024);
+    esp_alloc::heap_allocator!(size: 140 * 1024);
     let mut delay = Delay::new();
 
     // ---- Backlight: LP5562 on internal I2C (SDA=45, SCL=0) ----
@@ -85,19 +192,17 @@ fn main() -> ! {
             .unwrap()
             .with_sda(p.GPIO45)
             .with_scl(p.GPIO0);
-        let _ = i2c.write(LP5562_ADDR, &[0x00, 0x40]); // ENABLE
-        let _ = i2c.write(LP5562_ADDR, &[0x08, 0x01]); // CONFIG: internal clock
-        let _ = i2c.write(LP5562_ADDR, &[0x70, 0x00]); // LED map
-        let _ = i2c.write(LP5562_ADDR, &[0x0E, 0xC0]); // B-channel PWM ~= 75% brightness
+        let _ = i2c.write(LP5562_ADDR, &[0x00, 0x40]);
+        let _ = i2c.write(LP5562_ADDR, &[0x08, 0x01]);
+        let _ = i2c.write(LP5562_ADDR, &[0x70, 0x00]);
+        let _ = i2c.write(LP5562_ADDR, &[0x0E, 0xC0]);
         info!("backlight (LP5562) on");
     }
 
     // ---- Display GC9107 over SPI2 ----
     let spi = Spi::new(
         p.SPI2,
-        SpiConfig::default()
-            .with_frequency(Rate::from_mhz(40))
-            .with_mode(Mode::_0),
+        SpiConfig::default().with_frequency(Rate::from_mhz(40)).with_mode(Mode::_0),
     )
     .unwrap()
     .with_sck(p.GPIO15)
@@ -109,61 +214,40 @@ fn main() -> ! {
     let mut if_buf = alloc::vec![0u8; 4096];
     let di = SpiInterface::new(spi_dev, dc, &mut if_buf);
     let mut display = Builder::new(GC9107, di)
-        .display_size(W, H)
-        .display_offset(0, 32) // GC9107 is natively 128x160; AtomS3R panel offset by 32
-        .invert_colors(ColorInversion::Inverted)
+        .display_size(W as u16, H as u16)
+        .display_offset(0, 32)
+        .invert_colors(ColorInversion::Normal)
+        .color_order(ColorOrder::Bgr) // this AtomS3R panel is BGR (red<->blue swap confirmed)
         .reset_pin(rst)
         .init(&mut delay)
         .unwrap();
     info!("display (GC9107) init ok");
 
-    // ---- Animation pipeline spike ----
-    let mut fb = FrameBuf::new();
-    let bg = Rgb565::new(2, 4, 8);
-    let body = Rgb565::new(10, 38, 31);
-    let belly = Rgb565::new(22, 52, 46);
-    // smooth-ish bob (no float sin in no_std)
-    const BOB: [i32; 16] = [0, 1, 2, 3, 3, 3, 2, 1, 0, -1, -2, -3, -3, -3, -2, -1];
+    // ---- Precompute the gradient backdrop once (static); copy it each frame ----
+    let bg_top = Rgb565::new(21, 42, 44);
+    let bg_bot = Rgb565::new(15, 33, 40);
+    let mut backdrop: Vec<Rgb565> = alloc::vec![Rgb565::BLACK; (W * H) as usize];
+    for y in 0..H {
+        let c = lerp_col(bg_top, bg_bot, y as f32 / H as f32);
+        for x in 0..W {
+            backdrop[(y * W + x) as usize] = c;
+        }
+    }
 
-    let mut frame: u32 = 0;
+    let mut fb = Fb::new();
+    let start = Instant::now();
     let mut fps_t0 = Instant::now();
     let mut fps_n: u32 = 0;
 
     loop {
-        let cx = 64i32;
-        let cy = 66i32 + BOB[(frame / 3 % 16) as usize];
-        let blink = frame % 140 < 8;
+        let t = start.elapsed().as_millis() as f32 / 1000.0;
+        fb.px.copy_from_slice(&backdrop);
+        draw_vibird(&mut fb, t);
+        display.set_pixels(0, 0, W as u16 - 1, H as u16 - 1, fb.px.iter().copied()).ok();
 
-        fb.clear(bg);
-        let r = 30i32;
-        Circle::new(Point::new(cx - r, cy - r), 2 * r as u32)
-            .into_styled(PrimitiveStyle::with_fill(body))
-            .draw(&mut fb)
-            .ok();
-        let rb = 17i32;
-        Circle::new(Point::new(cx - rb, cy - rb + 10), 2 * rb as u32)
-            .into_styled(PrimitiveStyle::with_fill(belly))
-            .draw(&mut fb)
-            .ok();
-        for ex in [cx - 11, cx + 11] {
-            Circle::new(Point::new(ex - 6, cy - 12), 12)
-                .into_styled(PrimitiveStyle::with_fill(Rgb565::WHITE))
-                .draw(&mut fb)
-                .ok();
-            if !blink {
-                Circle::new(Point::new(ex - 3, cy - 9), 6)
-                    .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
-                    .draw(&mut fb)
-                    .ok();
-            }
-        }
-
-        display.set_pixels(0, 0, W - 1, H - 1, fb.px.iter().copied()).ok();
-
-        frame += 1;
         fps_n += 1;
         if fps_t0.elapsed() >= Duration::from_millis(1000) {
-            info!("animation: {} fps", fps_n);
+            info!("vibird: {} fps", fps_n);
             fps_n = 0;
             fps_t0 = Instant::now();
         }
