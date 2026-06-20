@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/vibird-bridge", "crates/vibird-cli"]
+members = ["crates/vibird-bridge", "crates/vibird-cli", "crates/vibird-emote-pack"]
 
 [workspace.package]
 version = "0.1.0"

@@ -1,0 +1,18 @@
+[package]
+name = "vibird-emote-pack"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Vibird emote packer — GIF (Liz art) → .veap resource pack."
+
+[dependencies]
+vibird-emote = { path = "../../../emote", features = ["std"] }
+image = { version = "0.25", default-features = false, features = ["gif", "png"] }
+clap = { workspace = true }
+anyhow = { workspace = true }
+
+[[bin]]
+name = "vibird-emote-pack"
+path = "src/main.rs"

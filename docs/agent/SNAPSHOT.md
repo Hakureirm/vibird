@@ -52,9 +52,9 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
 
 ## In flight / not built
 
-- **Emote pipeline** (ADR-0004): the `.veap` format + `vibird-emote` crate (no_std parser + std packer-lib +
-  5 tests) are **built** ✓ (`emote/`, spec `docs/agent/emote-pack-format.md`); the `vibird-emote-pack` CLI
-  (GIF→.veap) and the firmware region-flush player are next.
+- **Emote pipeline** (ADR-0004): the `.veap` format + `vibird-emote` crate + the `vibird-emote-pack` CLI
+  (GIF→.veap, e2e-verified with a Pillow GIF) are **built** ✓ (`emote/` + `host/crates/vibird-emote-pack`,
+  spec `docs/agent/emote-pack-format.md`); the firmware region-flush player is next.
 - **Liz art** (ADR-0005): not produced; **the production approach (Live2D / commission / AI) is the next
   decision.**
 - **Host bridge**: WebSocket-server skeleton only — ASR, prompt injection, mDNS, MCP, hooks not built.
