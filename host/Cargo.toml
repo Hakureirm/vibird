@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = ["crates/vibird-bridge", "crates/vibird-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "AGPL-3.0-only"
+repository = "https://github.com/Hakureirm/vibird"
+
+[workspace.dependencies]
+vibird-protocol = { path = "../protocol", features = ["std"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "sync", "io-util", "time"] }
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

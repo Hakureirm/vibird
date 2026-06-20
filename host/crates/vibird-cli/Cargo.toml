@@ -1,0 +1,20 @@
+[package]
+name = "vibird-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Vibird command-line interface — the `vibird` binary (serve / hook / mcp / config / service / claude)."
+
+[[bin]]
+name = "vibird"
+path = "src/main.rs"
+
+[dependencies]
+vibird-bridge = { path = "../vibird-bridge" }
+tokio.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
