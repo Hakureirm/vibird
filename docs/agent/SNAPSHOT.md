@@ -63,8 +63,7 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
 - **Agent line** (`docs/agent/`, dense, English): [SNAPSHOT.md](SNAPSHOT.md) · [adr/](adr/) ·
   [findings/](findings/) · [atoms3r-hardware.md](atoms3r-hardware.md).
 - **Human line** (`docs/human/{zh,en}/`, narrative, bilingual): `design` · `getting-started` · `hardware`.
-  **Status: `design.md` is bilingual (en + zh) ✓; `getting-started`, `hardware`, and the per-language index
-  pages are the next doc batch.**
+  **Status: the bilingual human line is complete ✓ (design / getting-started / hardware / index, en + zh).**
 - **Landing:** `README.md` (EN) ✓ + `README.zh-CN.md` (中文) ✓.
 
 ## ADR roster
@@ -94,7 +93,7 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
 
 1. **Decide Liz's art-production approach** (Live2D / commission / AI) — unblocks the whole character track.
 2. Build the emote pipeline: `.veap` format spec → `vibird-emote-pack` packer → firmware region-flush player.
-3. Finish the bilingual human docs (`getting-started`, `hardware`, per-language index pages).
+3. ~~Bilingual human docs~~ — ✅ done (design / getting-started / hardware / index, en + zh).
 4. Host **v0.1 voice loop**: ASR + tmux injection wired to the bridge.
 5. **esp-wifi WS streaming** spike.
 6. github: install `gh`, then push.
