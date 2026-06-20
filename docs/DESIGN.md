@@ -99,7 +99,7 @@ Three layers:
 
 | Version | Deliverable |
 |---|---|
-| **v0.1 Voice loop** | S3R hold-to-talk → injected into Claude Code; basic idle/listening/thinking animation. **Plus two de-risking spikes first:** (1) 60 fps pure-Rust double-buffered animation on real S3R; (2) esp-wifi WebSocket audio streaming reliability. |
+| **v0.1 Voice loop** | S3R hold-to-talk → injected into Claude Code; basic idle/listening/thinking animation. **De-risking spikes:** (1) pure-Rust animation on real S3R — ✅ **done** (99 fps pixel / 53 fps AA vector, [finding](findings/finding-rust-animation-feasibility.md)); (2) esp-wifi WebSocket audio streaming reliability — ⏳ open. |
 | **v0.2 Status + physical approve** | Hooks push agent state to the device; `PreToolUse` physical allow/deny. |
 | **v0.3 Zero-config** | Claude Code plugin + pip package; the agent configures the device. **← the soul.** |
 | **v0.4 Cross-agent** | Cursor / Codex adapters. |
@@ -125,7 +125,7 @@ vibird/
 ## 6. Open risks — spike early
 
 1. **esp-wifi reliability** for sustained WS audio streaming (fallback: `esp-idf-svc` / ESP-IDF WiFi, still Rust).
-2. **60 fps pure-Rust animation** on the GC9107 (math says yes — 128×128×16-bit = 32 KB/frame, ~6 ms DMA flush at 40 MHz → ample 60 fps headroom — but prove on hardware).
+2. ~~**60 fps pure-Rust animation** on the GC9107~~ — ✅ **resolved on hardware**: 99 fps pixel / 53 fps AA vector ([finding-rust-animation-feasibility](findings/finding-rust-animation-feasibility.md)). The panel also needed a colour-order fix ([finding-gc9107-color-order](findings/finding-gc9107-color-order.md)).
 3. **Prompt-injection ergonomics** (tmux requirement in v0.1; cleaner SDK path later).
 4. **Chinese / code-switch ASR** quality (dual engine; cloud fallback).
 

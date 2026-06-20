@@ -1,8 +1,23 @@
+---
+doc_kind: adr
+adr_id: 0002
+title: "Firmware in Rust on esp-rs (esp-hal), not Zephyr or C++"
+status: accepted
+date: 2026-06-21
+last_verified_commit: eb40d35
+supersedes: []
+superseded_by: []
+---
+
 # ADR-0002 — Firmware in Rust on esp-rs (esp-hal), not Zephyr or C++
 
 - **Status:** accepted
-- **Date:** 2026-06
+- **Date:** 2026-06-21
 - **Context source:** technical-selection research track (2026-06)
+- **Update (`eb40d35`):** the two spikes this ADR gated are partly resolved — the **60 fps animation**
+  risk is closed (99/53 fps, [finding-rust-animation-feasibility](../findings/finding-rust-animation-feasibility.md));
+  the **esp-wifi WS-streaming** risk is still open. Panel colour quirk found + fixed
+  ([finding-gc9107-color-order](../findings/finding-gc9107-color-order.md)).
 
 ## Context
 

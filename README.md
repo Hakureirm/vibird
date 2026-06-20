@@ -46,6 +46,7 @@ reference, not a requirement.
 ## Status
 
 Pre-alpha. Building toward **v0.1** (the voice loop) — see the roadmap in [`docs/DESIGN.md`](docs/DESIGN.md#4-roadmap).
+For the precise current state (what's built and hardware-verified), see [`docs/SNAPSHOT.md`](docs/SNAPSHOT.md).
 
 ## License
 
