@@ -21,7 +21,8 @@ want the bilingual narrative in [`../human/`](../human/) instead.
 - Every cross-file decision → an ADR. Every observation → a finding. Negative results are first-class.
 - SNAPSHOT is the source of truth; `README.md` + `../human/` are projections.
 - `last_verified_commit` frontmatter on every stateful doc.
-- Atomic commits (code + tests + docs together). Commit messages in English (international OSS).
+- Atomic commits (code + tests + docs together). **Commit messages and code comments are in Chinese**
+  (the user's global rule, even for this OSS repo); only the human docs / README are bilingual.
 
 ## Build / flash (from repo root)
 

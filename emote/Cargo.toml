@@ -1,0 +1,16 @@
+[package]
+name = "vibird-emote"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "AGPL-3.0-only"
+description = "Vibird emote pack (.veap) format — no_std zero-copy parser + (std) packer, shared by firmware and host."
+repository = "https://github.com/Hakureirm/vibird"
+
+[features]
+default = []
+# 开启 host 侧写入器(打包器需要 std)。固件留空即纯 no_std 解析器。
+std = []
+
+# 解析器纯 core,写入器用 std —— 无第三方依赖。
+[dependencies]

@@ -52,8 +52,9 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
 
 ## In flight / not built
 
-- **Emote pipeline** (ADR-0004): the `.veap` format, the `vibird-emote-pack` host packer, and the firmware
-  region-flush player are **not built yet**.
+- **Emote pipeline** (ADR-0004): the `.veap` format + `vibird-emote` crate (no_std parser + std packer-lib +
+  5 tests) are **built** ✓ (`emote/`, spec `docs/agent/emote-pack-format.md`); the `vibird-emote-pack` CLI
+  (GIF→.veap) and the firmware region-flush player are next.
 - **Liz art** (ADR-0005): not produced; **the production approach (Live2D / commission / AI) is the next
   decision.**
 - **Host bridge**: WebSocket-server skeleton only — ASR, prompt injection, mDNS, MCP, hooks not built.
@@ -61,7 +62,8 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
 ## Documentation map
 
 - **Agent line** (`docs/agent/`, dense, English): [SNAPSHOT.md](SNAPSHOT.md) · [adr/](adr/) ·
-  [findings/](findings/) · [atoms3r-hardware.md](atoms3r-hardware.md).
+  [findings/](findings/) · [atoms3r-hardware.md](atoms3r-hardware.md) ·
+  [emote-pack-format.md](emote-pack-format.md).
 - **Human line** (`docs/human/{zh,en}/`, narrative, bilingual): `design` · `getting-started` · `hardware`.
   **Status: the bilingual human line is complete ✓ (design / getting-started / hardware / index, en + zh).**
 - **Landing:** `README.md` (EN) ✓ + `README.zh-CN.md` (中文) ✓.
