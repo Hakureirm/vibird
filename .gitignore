@@ -1,0 +1,40 @@
+# ── Rust ─────────────────────────────────────────────
+/target/
+**/target/
+# Cargo.lock IS committed (this repo ships binaries/firmware).
+
+# ── Python ───────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+wheelhouse/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ── esp / firmware build ─────────────────────────────
+.embuild/
+sdkconfig.old
+*.map
+
+# ── secrets / local config (NEVER commit) ────────────
+.env
+*.local
+secrets.toml
+secrets.h
+*.key
+*.pem
+device-config.json
+
+# ── OS / editors ─────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
