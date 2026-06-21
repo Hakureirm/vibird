@@ -21,7 +21,7 @@ use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
     delay::Delay,
-    gpio::{Level, Output, OutputConfig},
+    gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
     i2c::master::{Config as I2cConfig, I2c},
     main,
     spi::{
@@ -31,7 +31,7 @@ use esp_hal::{
     time::{Duration, Instant, Rate},
 };
 use libm::sinf;
-use log::info;
+use log::{info, warn};
 use mipidsi::{
     Builder,
     interface::SpiInterface,
@@ -247,6 +247,23 @@ fn main() -> ! {
         .unwrap();
     info!("display (GC9107) init ok");
 
+    // ---- Button (GPIO41, active-low) = push-to-talk ----
+    let button = Input::new(p.GPIO41, InputConfig::default().with_pull(Pull::Up));
+
+    // ---- Base I2C (38/39): probe the Atomic Echo Base (ES8311 0x18 + PI4IOE 0x43) ----
+    let mut base = I2c::new(p.I2C1, I2cConfig::default())
+        .unwrap()
+        .with_sda(p.GPIO38)
+        .with_scl(p.GPIO39);
+    let mut pb = [0u8; 1];
+    let es8311_present = base.read(0x18u8, &mut pb).is_ok();
+    let pi4ioe_present = base.read(0x43u8, &mut pb).is_ok();
+    if es8311_present {
+        info!("Echo Base ES8311 @0x18 present (pi4ioe@0x43={pi4ioe_present})");
+    } else {
+        warn!("Echo Base not detected (ES8311 0x18 no ACK) — mic capture needs it attached");
+    }
+
     // ---- Precompute the gradient backdrop once (static); copy it each frame ----
     let bg_top = Rgb565::new(21, 42, 44);
     let bg_bot = Rgb565::new(15, 33, 40);
@@ -272,8 +289,9 @@ fn main() -> ! {
             const STEP_MS: u32 = 5;
             let mut fps_t0 = Instant::now();
             let mut frames_n: u32 = 0;
-            // 无网络时:每 2.5s 轮播到下一个状态表情,展示全部片段。将来 SetState 用 set_clip 替代。
+            // 无网络时:每 2.5s 轮播展示全部表情;按住按键则切 listening。将来语音/SetState 替代。
             let mut clip_t0 = Instant::now();
+            let mut was_held = false;
             loop {
                 if let Some(frame) = player.tick(STEP_MS) {
                     // 只刷脏矩形 —— 区域刷新
@@ -286,12 +304,26 @@ fn main() -> ! {
                     }
                     frames_n += 1;
                 }
+                // 按键 push-to-talk(GPIO41 低有效):按住 → listening 表情。
+                // 将来此处采 Echo Base 麦克风(ES8311 + I2S)并经 WebSocket 上传给桥接。
+                let held = button.is_low();
+                if held && !was_held {
+                    player.set_clip("listening");
+                    info!("PTT down → listening (es8311_present={es8311_present})");
+                } else if !held && was_held {
+                    info!("PTT up");
+                    clip_t0 = Instant::now();
+                }
+                was_held = held;
                 if fps_t0.elapsed() >= Duration::from_millis(1000) {
-                    info!("vibird emote: {} frames/s", frames_n);
+                    info!(
+                        "vibird emote: {} frames/s (btn={held} echo_base={es8311_present})",
+                        frames_n
+                    );
                     frames_n = 0;
                     fps_t0 = Instant::now();
                 }
-                if clip_t0.elapsed() >= Duration::from_millis(2500) {
+                if !held && clip_t0.elapsed() >= Duration::from_millis(2500) {
                     player.next_clip();
                     if let Some(c) = player.clip() {
                         info!("emote clip → {}", c.name());

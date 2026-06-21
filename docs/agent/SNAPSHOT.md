@@ -69,8 +69,11 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
   local **control plane** (TCP) + `vibird hook` that pushes agent-state to the device face from Claude Code
   hooks; the **MCP server** (`vibird mcp`, hand-rolled stdio JSON-RPC) and the **Claude Code plugin**
   (`claude-plugin/`: hooks + MCP + zero-config skill) are built ✓. The **`pip install` scaffold**
-  (`python/`, PyO3 + maturin, `vibird.serve(...)`) builds ✓ too. Still TODO: mDNS advertise, the
-  `config`/`service` CLI subcommands, and **device-side** audio capture (firmware WiFi/WS/I2S) for end-to-end.
+  (`python/`, PyO3 + maturin, `vibird.serve(...)`) builds ✓ too.
+- **Device-side audio (in progress):** button **push-to-talk** (GPIO41) drives the `listening` emote ✓; the
+  **Atomic Echo Base is detected present on hardware** (ES8311 @0x18 + PI4IOE @0x43, base I2C 38/39) ✓. Next:
+  ES8311 + I2S mic capture (16 kHz PCM; `es8311` crate ready) → WiFi/WS upload to the bridge.
+- Still TODO: mDNS advertise, `config`/`service` CLI, WiFi/WS client + the mic capture above (for end-to-end).
 
 ## Documentation map
 
