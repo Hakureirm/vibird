@@ -312,6 +312,93 @@ impl<'a> Rect<'a> {
 }
 
 // ----------------------------------------------------------------------------
+// 播放器(固件 / host 共用,no_std 无 alloc;画布由调用方持有)
+// ----------------------------------------------------------------------------
+
+/// 表情播放器:在一个 `Pack` 上按片段 fps 推进帧。
+///
+/// 无 alloc、no_std —— **画布由调用方持有**。每次 [`Player::tick`] 若产出一帧,调用方就把该帧的每个
+/// 矩形拷进自己的画布对应位置,并只把这些矩形区域刷到屏上(区域刷新)。
+pub struct Player<'a> {
+    pack: Pack<'a>,
+    clip_idx: usize,
+    frame: u16,
+    elapsed_ms: u32,
+    pending_first: bool,
+}
+
+impl<'a> Player<'a> {
+    /// 在第 0 个片段上新建(下一次 `tick` 产出该片段第 0 帧 = 全画布)。
+    pub fn new(pack: Pack<'a>) -> Self {
+        Self {
+            pack,
+            clip_idx: 0,
+            frame: 0,
+            elapsed_ms: 0,
+            pending_first: true,
+        }
+    }
+
+    /// 当前片段。
+    pub fn clip(&self) -> Option<Clip<'a>> {
+        self.pack.clip(self.clip_idx)
+    }
+
+    /// 当前帧序号。
+    pub fn frame_index(&self) -> u16 {
+        self.frame
+    }
+
+    /// 切到指定名字的片段(从第 0 帧重播)。返回是否找到并切换。
+    pub fn set_clip(&mut self, name: &str) -> bool {
+        for i in 0..self.pack.clip_count() {
+            if self.pack.clip(i).is_some_and(|c| c.name() == name) {
+                self.clip_idx = i;
+                self.frame = 0;
+                self.elapsed_ms = 0;
+                self.pending_first = true;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// 推进 `dt_ms`。
+    ///
+    /// 返回 `Some(frame)` 表示该应用一帧:片段刚开始时是第 0 帧(全画布),之后是到点的下一帧
+    /// (delta)。`None` 表示这次没有新帧(时间未到,或非循环片段已停在末帧)。
+    pub fn tick(&mut self, dt_ms: u32) -> Option<Frame<'a>> {
+        let clip = self.pack.clip(self.clip_idx)?;
+        // 片段开始:先发第 0 帧(全画布)。
+        if self.pending_first {
+            self.pending_first = false;
+            self.frame = 0;
+            return clip.frame(0);
+        }
+        let count = clip.frame_count();
+        if count == 0 {
+            return None;
+        }
+        let fps = clip.fps().max(1) as u32;
+        let frame_ms = (1000 / fps).max(1);
+        self.elapsed_ms = self.elapsed_ms.saturating_add(dt_ms);
+        if self.elapsed_ms < frame_ms {
+            return None;
+        }
+        self.elapsed_ms -= frame_ms;
+        let next = self.frame + 1;
+        if next < count {
+            self.frame = next;
+        } else if clip.looping() {
+            self.frame = clip.loop_start().min(count - 1);
+        } else {
+            return None; // 非循环:停在末帧
+        }
+        clip.frame(self.frame)
+    }
+}
+
+// ----------------------------------------------------------------------------
 // 写入器(host 打包器用,需 std)
 // ----------------------------------------------------------------------------
 
@@ -571,5 +658,60 @@ mod tests {
         let clip = pack.clip(0).unwrap();
         let n = clip.frames().count(); // 不应 panic;截断帧被丢弃
         assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn player_sequences_and_loops() {
+        let mut b = Builder::new(2, 2);
+        let f0 = vec![0u16; 4];
+        let mut f1 = f0.clone();
+        f1[0] = 1;
+        let mut f2 = f0.clone();
+        f2[3] = 2;
+        b.add_clip(
+            "idle",
+            100, // fps 100 → 10ms/帧
+            true,
+            0,
+            LOOP_END_LAST,
+            vec![
+                full_frame(&f0, 2, 2),
+                diff_bbox(&f0, &f1, 2, 2),
+                diff_bbox(&f1, &f2, 2, 2),
+            ],
+        );
+        b.add_clip(
+            "busy",
+            50,
+            false,
+            0,
+            LOOP_END_LAST,
+            vec![full_frame(&f0, 2, 2)],
+        );
+        let bytes = b.to_bytes();
+        let pack = Pack::parse(&bytes).unwrap();
+
+        let mut p = Player::new(pack);
+        // 片段开始 → 第 0 帧(全画布)
+        assert_eq!(p.tick(0).unwrap().rect_count(), 1);
+        assert_eq!(p.frame_index(), 0);
+        // 时间不够 → 无新帧
+        assert!(p.tick(5).is_none());
+        // 累计到 10ms → 第 1 帧
+        assert!(p.tick(5).is_some());
+        assert_eq!(p.frame_index(), 1);
+        // 第 2 帧
+        assert!(p.tick(10).is_some());
+        assert_eq!(p.frame_index(), 2);
+        // 循环回第 0 帧
+        assert!(p.tick(10).is_some());
+        assert_eq!(p.frame_index(), 0);
+
+        // 切到非循环片段
+        assert!(p.set_clip("busy"));
+        assert_eq!(p.clip().unwrap().name(), "busy");
+        assert_eq!(p.tick(0).unwrap().rect_count(), 1); // busy 第 0 帧
+        assert!(p.tick(1000).is_none()); // 单帧非循环 → 停住
+        assert!(!p.set_clip("nope"));
     }
 }

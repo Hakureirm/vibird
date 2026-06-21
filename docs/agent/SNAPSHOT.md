@@ -38,7 +38,9 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
   ([finding-rust-animation-feasibility](findings/finding-rust-animation-feasibility.md)).
 - **Colours: fixed AND user-confirmed on hardware (2026-06-21)** — the panel is BGR + Normal inversion
   ([finding-gc9107-color-order](findings/finding-gc9107-color-order.md)).
-- Current device render: a smooth AA-vector **placeholder** (to be replaced by the Liz emote pack).
+- Current device render: the firmware drives the **.veap `Player`** (region-flush) playing an embedded
+  procedural placeholder (breathing dot); the AA-vector renderer is the no-pack fallback. Built for xtensa;
+  not flashed this iteration (device offline).
 
 ## Decisions just locked (2026-06-21)
 
@@ -52,9 +54,10 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
 
 ## In flight / not built
 
-- **Emote pipeline** (ADR-0004): the `.veap` format + `vibird-emote` crate + the `vibird-emote-pack` CLI
-  (GIF→.veap, e2e-verified with a Pillow GIF) are **built** ✓ (`emote/` + `host/crates/vibird-emote-pack`,
-  spec `docs/agent/emote-pack-format.md`); the firmware region-flush player is next.
+- **Emote pipeline** (ADR-0004): **complete** ✓ — the `.veap` format + `vibird-emote` crate (parser +
+  `Player` + packer-lib, 6 tests) + the `vibird-emote-pack` CLI (GIF→.veap, e2e-verified) + the **firmware
+  region-flush player** (embeds `assets/placeholder.veap`, builds for xtensa). Remaining: on-device flash
+  (device was offline) + real **Liz art** (Live2D).
 - **Liz art** (ADR-0005): not produced; **the production approach (Live2D / commission / AI) is the next
   decision.**
 - **Host bridge**: WebSocket-server skeleton only — ASR, prompt injection, mDNS, MCP, hooks not built.

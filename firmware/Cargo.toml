@@ -31,6 +31,9 @@ embedded-hal = "1.0"
 embedded-hal-bus = "0.3"
 libm = "0.2"
 
+# 表情包解析 + 播放器(no_std,无 alloc 的解析/播放;只用默认特性 = 不带 std)
+vibird-emote = { path = "../emote", default-features = false }
+
 
 # For fine tuning these settings, please refer to https://doc.rust-lang.org/cargo/reference/profiles.html
 [profile.dev]

@@ -25,19 +25,20 @@ use esp_hal::{
     i2c::master::{Config as I2cConfig, I2c},
     main,
     spi::{
-        master::{Config as SpiConfig, Spi},
         Mode,
+        master::{Config as SpiConfig, Spi},
     },
     time::{Duration, Instant, Rate},
 };
 use libm::sinf;
 use log::info;
 use mipidsi::{
+    Builder,
     interface::SpiInterface,
     models::GC9107,
     options::{ColorInversion, ColorOrder},
-    Builder,
 };
+use vibird_emote::{Pack, Player};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -45,9 +46,18 @@ const W: i32 = 128;
 const H: i32 = 128;
 const LP5562_ADDR: u8 = 0x30;
 
+/// 内嵌占位表情包(呼吸青点);Liz 美术到位后换成正式 .veap(见 assets/placeholder.veap)。
+static PLACEHOLDER: &[u8] = include_bytes!("../../../assets/placeholder.veap");
+
+/// 把 .veap 的原始 RGB565(u16)转成 embedded-graphics 的 Rgb565。
+#[inline]
+fn rgb565_from_raw(c: u16) -> Rgb565 {
+    Rgb565::new((c >> 11) as u8, ((c >> 5) & 0x3f) as u8, (c & 0x1f) as u8)
+}
+
 #[inline]
 fn clamp01(x: f32) -> f32 {
-    if x < 0.0 { 0.0 } else if x > 1.0 { 1.0 } else { x }
+    x.clamp(0.0, 1.0)
 }
 
 /// Blend two Rgb565 colours in 5/6/5 space.
@@ -66,7 +76,9 @@ struct Fb {
 }
 impl Fb {
     fn new() -> Self {
-        Self { px: alloc::vec![Rgb565::BLACK; (W * H) as usize] }
+        Self {
+            px: alloc::vec![Rgb565::BLACK; (W * H) as usize],
+        }
     }
     #[inline]
     fn idx(x: i32, y: i32) -> usize {
@@ -75,11 +87,15 @@ impl Fb {
     /// Alpha-blend `col` at (x,y) with coverage `a`.
     #[inline]
     fn blend(&mut self, x: i32, y: i32, col: Rgb565, a: f32) {
-        if a <= 0.0 || x < 0 || x >= W || y < 0 || y >= H {
+        if a <= 0.0 || !(0..W).contains(&x) || !(0..H).contains(&y) {
             return;
         }
         let i = Self::idx(x, y);
-        self.px[i] = if a >= 1.0 { col } else { lerp_col(self.px[i], col, a) };
+        self.px[i] = if a >= 1.0 {
+            col
+        } else {
+            lerp_col(self.px[i], col, a)
+        };
     }
 }
 
@@ -125,7 +141,9 @@ fn tri(fb: &mut Fb, p: [(f32, f32); 3], col: Rgb565) {
                     let d0 = edge(p[0].0, p[0].1, p[1].0, p[1].1, px, py);
                     let d1 = edge(p[1].0, p[1].1, p[2].0, p[2].1, px, py);
                     let d2 = edge(p[2].0, p[2].1, p[0].0, p[0].1, px, py);
-                    if (d0 >= 0.0 && d1 >= 0.0 && d2 >= 0.0) || (d0 <= 0.0 && d1 <= 0.0 && d2 <= 0.0) {
+                    if (d0 >= 0.0 && d1 >= 0.0 && d2 >= 0.0)
+                        || (d0 <= 0.0 && d1 <= 0.0 && d2 <= 0.0)
+                    {
                         cov += 0.25;
                     }
                 }
@@ -154,7 +172,11 @@ fn draw_vibird(fb: &mut Fb, t: f32) {
         let v = t * 0.33;
         v - libm::floorf(v)
     };
-    let closed = if cyc < 0.07 { sinf(cyc / 0.07 * core::f32::consts::PI) } else { 0.0 };
+    let closed = if cyc < 0.07 {
+        sinf(cyc / 0.07 * core::f32::consts::PI)
+    } else {
+        0.0
+    };
     let ery = 9.0 * (1.0 - 0.9 * closed);
 
     // body (flat, clean — no outline, no shadow)
@@ -202,7 +224,9 @@ fn main() -> ! {
     // ---- Display GC9107 over SPI2 ----
     let spi = Spi::new(
         p.SPI2,
-        SpiConfig::default().with_frequency(Rate::from_mhz(40)).with_mode(Mode::_0),
+        SpiConfig::default()
+            .with_frequency(Rate::from_mhz(40))
+            .with_mode(Mode::_0),
     )
     .unwrap()
     .with_sck(p.GPIO15)
@@ -234,22 +258,60 @@ fn main() -> ! {
         }
     }
 
-    let mut fb = Fb::new();
-    let start = Instant::now();
-    let mut fps_t0 = Instant::now();
-    let mut fps_n: u32 = 0;
-
-    loop {
-        let t = start.elapsed().as_millis() as f32 / 1000.0;
-        fb.px.copy_from_slice(&backdrop);
-        draw_vibird(&mut fb, t);
-        display.set_pixels(0, 0, W as u16 - 1, H as u16 - 1, fb.px.iter().copied()).ok();
-
-        fps_n += 1;
-        if fps_t0.elapsed() >= Duration::from_millis(1000) {
-            info!("vibird: {} fps", fps_n);
-            fps_n = 0;
-            fps_t0 = Instant::now();
+    // 主路径:播放内嵌表情包(区域刷新);解析失败则回退到抗锯齿矢量占位动画。
+    match Pack::parse(PLACEHOLDER) {
+        Ok(pack) => {
+            let (cw, ch) = pack.canvas();
+            info!(
+                "emote pack: {} clips, canvas {}x{}",
+                pack.clip_count(),
+                cw,
+                ch
+            );
+            let mut player = Player::new(pack);
+            const STEP_MS: u32 = 5;
+            let mut fps_t0 = Instant::now();
+            let mut frames_n: u32 = 0;
+            loop {
+                if let Some(frame) = player.tick(STEP_MS) {
+                    // 只刷脏矩形 —— 区域刷新
+                    for r in frame.rects() {
+                        let x1 = r.x + r.w.saturating_sub(1);
+                        let y1 = r.y + r.h.saturating_sub(1);
+                        display
+                            .set_pixels(r.x, r.y, x1, y1, r.pixels_rgb565().map(rgb565_from_raw))
+                            .ok();
+                    }
+                    frames_n += 1;
+                }
+                if fps_t0.elapsed() >= Duration::from_millis(1000) {
+                    info!("vibird emote: {} frames/s", frames_n);
+                    frames_n = 0;
+                    fps_t0 = Instant::now();
+                }
+                delay.delay_millis(STEP_MS);
+            }
+        }
+        Err(_) => {
+            // 回退:抗锯齿矢量占位动画
+            let mut fb = Fb::new();
+            let start = Instant::now();
+            let mut fps_t0 = Instant::now();
+            let mut fps_n: u32 = 0;
+            loop {
+                let t = start.elapsed().as_millis() as f32 / 1000.0;
+                fb.px.copy_from_slice(&backdrop);
+                draw_vibird(&mut fb, t);
+                display
+                    .set_pixels(0, 0, W as u16 - 1, H as u16 - 1, fb.px.iter().copied())
+                    .ok();
+                fps_n += 1;
+                if fps_t0.elapsed() >= Duration::from_millis(1000) {
+                    info!("vibird: {} fps", fps_n);
+                    fps_n = 0;
+                    fps_t0 = Instant::now();
+                }
+            }
         }
     }
 }
