@@ -198,6 +198,7 @@ async fn main(spawner: Spawner) {
                         Ok(()) => {
                             let _ = codec.microphone_config(&mut base, false); // 模拟麦克风
                             let _ = codec.microphone_gain_set(&mut base, es8311::MicGain::Gain30dB);
+                            let _ = codec.mute(&mut base, true); // 关 DAC 输出:录音设备不发声,消 PTT 时喇叭噪声
                             info!("ES8311 麦克风初始化 ok");
                         }
                         Err(e) => warn!("ES8311 初始化失败:{e:?}(麦克风不可用)"),
