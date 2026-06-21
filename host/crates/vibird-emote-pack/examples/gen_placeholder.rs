@@ -38,5 +38,8 @@ fn main() {
     b.add_clip("idle", 24, true, 0, LOOP_END_LAST, frames);
     let bytes = b.to_bytes();
     std::fs::write(&out, &bytes).expect("写出失败");
-    println!("✓ 占位 .veap → {out} ({} 字节, {w}x{h}, 24 帧)", bytes.len());
+    println!(
+        "✓ 占位 .veap → {out} ({} 字节, {w}x{h}, 24 帧)",
+        bytes.len()
+    );
 }

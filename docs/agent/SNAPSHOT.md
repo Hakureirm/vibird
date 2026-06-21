@@ -60,7 +60,10 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
   (device was offline) + real **Liz art** (Live2D).
 - **Liz art** (ADR-0005): not produced; **the production approach (Live2D / commission / AI) is the next
   decision.**
-- **Host bridge**: WebSocket-server skeleton only — ASR, prompt injection, mDNS, MCP, hooks not built.
+- **Host bridge** (`host/`): the **v0.1 voice loop is built (host side)** ✓ — WS server + audio framing +
+  pluggable ASR (stub / cloud Whisper) + tmux injection + agent-state push
+  (`vibird serve --tmux … --asr …`). Still TODO: mDNS advertise, MCP server, Claude Code hooks, and the
+  **device-side** audio capture (firmware WiFi/WS/I2S) for true end-to-end.
 
 ## Documentation map
 
@@ -99,7 +102,7 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
 1. **Decide Liz's art-production approach** (Live2D / commission / AI) — unblocks the whole character track.
 2. Build the emote pipeline: `.veap` format spec → `vibird-emote-pack` packer → firmware region-flush player.
 3. ~~Bilingual human docs~~ — ✅ done (design / getting-started / hardware / index, en + zh).
-4. Host **v0.1 voice loop**: ASR + tmux injection wired to the bridge.
+4. ~~Host v0.1 voice loop (ASR + tmux injection)~~ — ✅ host side done; **device-side audio capture** (firmware WiFi/WS/I2S) is the remaining half.
 5. **esp-wifi WS streaming** spike.
 6. github: install `gh`, then push.
 
