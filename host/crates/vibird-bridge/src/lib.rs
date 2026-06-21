@@ -41,6 +41,25 @@ pub struct Config {
     pub inject: Inject,
 }
 
+/// 用 mDNS 广播 `_vibird._tcp.local`(端口 = WS 端口),让设备自动发现 bridge(免硬编码 IP)。
+/// 返回 daemon 句柄 —— 调用方须持有它,丢弃即停止广播。
+fn advertise_mdns(port: u16) -> Result<mdns_sd::ServiceDaemon> {
+    use mdns_sd::{ServiceDaemon, ServiceInfo};
+    let daemon = ServiceDaemon::new()?;
+    let info = ServiceInfo::new(
+        "_vibird._tcp.local.",
+        "vibird-bridge",
+        "vibird-bridge.local.",
+        "",                                                  // 地址留空,靠 enable_addr_auto 自动探测各网卡
+        port,
+        None::<std::collections::HashMap<String, String>>,
+    )?
+    .enable_addr_auto();
+    daemon.register(info)?;
+    info!("mDNS 广播 _vibird._tcp.local:{port}(设备可自动发现 bridge)");
+    Ok(daemon)
+}
+
 /// 运行桥接:WS 端口接受设备,控制面端口接受本地状态推送。
 pub async fn serve(port: u16, config: Config) -> Result<()> {
     let addr = format!("0.0.0.0:{port}");
@@ -59,7 +78,14 @@ pub async fn serve(port: u16, config: Config) -> Result<()> {
             }
         });
     }
-    // TODO(v0.1): 通过 mDNS 广播 `_vibird._tcp` 让设备自动发现。
+    // mDNS 广播让设备自动发现(免硬编码 bridge IP);持有 daemon 句柄到 serve 结束以保持广播。
+    let _mdns = match advertise_mdns(port) {
+        Ok(d) => Some(d),
+        Err(e) => {
+            warn!("mDNS 广播启动失败(设备需手动配 bridge 地址):{e}");
+            None
+        }
+    };
     loop {
         let (stream, peer) = listener.accept().await?;
         info!("device connecting from {peer}");

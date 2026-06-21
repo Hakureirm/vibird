@@ -17,3 +17,4 @@ anyhow.workspace = true
 tracing.workspace = true
 # 云端 ASR(Whisper 兼容)用的 HTTP 客户端;rustls 避免 openssl。
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "multipart", "json"] }
+mdns-sd = "0.20.0"
