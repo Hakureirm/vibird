@@ -39,10 +39,13 @@ impl Inject {
             Inject::Log => info!("(只记录,未注入)转写:{text}"),
             Inject::Tmux(target) => {
                 // `-l` 字面量,避免 tmux 把内容当快捷键;随后单独发 Enter 提交。
-                let typed = run_tmux(["send-keys", "-t", target, "-l", text]);
-                let entered = run_tmux(["send-keys", "-t", target, "Enter"]);
+                let typed = run_tmux(&["send-keys", "-t", target, "-l", text]);
+                let entered = run_tmux(&["send-keys", "-t", target, "Enter"]);
                 if !(typed && entered) {
-                    warn!("tmux 注入失败(目标 {target} 是否存在?);转写:{text}");
+                    warn!(
+                        "tmux 注入失败(目标 {target} 在 socket {TMUX_SOCKET} 上吗?\
+                         建会话用:tmux -S {TMUX_SOCKET} new -s {target});转写:{text}"
+                    );
                 }
             }
             Inject::Keystroke => {
@@ -55,8 +58,14 @@ impl Inject {
     }
 }
 
-fn run_tmux<const N: usize>(args: [&str; N]) -> bool {
+/// 固定的绝对路径 tmux socket。bridge 与用户建会话都用它,绕开两边 $TMPDIR 不同导致的
+/// 默认 socket(`$TMPDIR/tmux-$UID/default`)不一致问题 —— 否则 send-keys 找不到对方的会话。
+const TMUX_SOCKET: &str = "/tmp/vibird-tmux.sock";
+
+fn run_tmux(args: &[&str]) -> bool {
     std::process::Command::new("tmux")
+        .arg("-S")
+        .arg(TMUX_SOCKET)
         .args(args)
         .status()
         .map(|s| s.success())
