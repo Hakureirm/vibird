@@ -91,11 +91,14 @@ The whole **"speak → ASR → inject into Claude Code"** loop is **closed and v
   loop to embassy async** and now carries the full on-device stack — **WiFi STA (`esp-radio` 0.18, the
   esp-hal-1.1 successor to `esp-wifi`) + `esp-rtos` scheduler + `embassy-net` + a hand-rolled no_std
   WebSocket client (`ws.rs`) + the shared `vibird-protocol` types via no_std `serde_json`**. It connects to
-  the bridge, sends `Hello`, and maps `SetState` downlinks → `.veap` emote clips. **Gate 1 (compiles) +
-  offline-mode HW-verified (2026-06-21): boots under embassy, renders the 7 emotes at ~18 fps, Echo Base
-  ES8311 @0x18 detected.** WiFi credentials inject at build time (`VIBIRD_WIFI_SSID/PASS/BRIDGE_ADDR` via
-  `config.rs`). **Pending (need WiFi creds + on-network test):** STA connect → WS handshake → downlink-drives-
-  face (Gates 2–4), then ES8311 + I2S mic capture → WS PCM upload (Gate 5).
+  the bridge, sends `Hello`, and maps `SetState` downlinks → `.veap` emote clips. **Gates 1–4 HW-verified on
+  the real AtomS3R (2026-06-21):** boots under embassy (~18 fps emotes), joins WiFi `Firefly-2.4G` (DHCP
+  `192.168.127.73`), the **hand-rolled WS client handshakes with the bridge's tokio-tungstenite + sends
+  `Hello`** (bridge logs `hello from atoms3r-vibird`), and **every pushed `SetState`
+  (idle/listening/thinking/working/awaiting_approval/done/error) drives the device face** — the
+  status-display half of the loop is **closed on hardware**. WiFi creds inject at build time
+  (`VIBIRD_WIFI_SSID/PASS/BRIDGE_ADDR` via `config.rs`). **Only remaining device half: Gate 5 — ES8311 + I2S
+  mic capture → WS PCM upload** (the hardware voice uplink).
 - Still TODO: mDNS advertise, `config`/`service` CLI, the mic-capture upload above (the last device half).
 
 ## Documentation map
