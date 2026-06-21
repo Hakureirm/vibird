@@ -44,17 +44,19 @@ elsewhere.
 
 ## 2. Architecture
 
+```mermaid
+flowchart LR
+    Device["Device — AtomS3R + Echo Base (reference)<br/>hold-to-talk → 16k PCM<br/>high-refresh Liz animation<br/>button + IMU · RGB / speaker"]
+    Bridge["Host bridge / SDK (Rust)<br/>WS server · dual-engine ASR<br/>Claude Code integration · mDNS"]
+    Agent["AI agent<br/>Claude Code<br/>(Cursor / Codex next)"]
+    Device -- "WiFi / WebSocket · binary PCM" --> Bridge
+    Bridge -- "state push → emote" --> Device
+    Bridge -- "hooks · MCP · tmux · approve" --> Agent
+    Agent -- "events" --> Bridge
 ```
-   Device (reference: M5 AtomS3R + Echo Base)        Host bridge / SDK (Rust)            AI agent
-   ┌───────────────────────────────┐    WiFi /      ┌──────────────────────────┐  hooks  ┌────────────┐
-   │ • hold-to-talk → 16k PCM ──────┼── WebSocket ──▶│ WS server (device dials in)│── MCP ─▶│ Claude Code│
-   │ • high-refresh state animation │   (binary)     │ dual-engine ASR            │  tmux   │ (Cursor /  │
-   │   (Liz emotes)                 │◀── state ──────│ Claude Code integration    │◀────────│  Codex →)  │
-   │ • button + IMU input           │   push         │ mDNS-advertised            │ approve └────────────┘
-   └───────────────────────────────┘                └──────────────────────────┘
-   not bound to S3R: any device speaking          ships as: `cargo install` + `pip install` (PyO3/maturin)
-   the Vibird protocol works                      + a one-command Claude Code plugin
-```
+
+> Not bound to the S3R — any device speaking the Vibird protocol works. Ships as `cargo install` +
+> `pip install` (PyO3/maturin) + a one-command Claude Code plugin.
 
 Three layers:
 

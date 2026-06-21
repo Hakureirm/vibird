@@ -37,10 +37,15 @@ competitive analysis: [`docs/human/en/design.md`](docs/human/en/design.md).
 
 ## Architecture
 
-```
- Device (Rust / esp-hal)        Host bridge (Rust)              AI agent
- hold-to-talk · Liz emotes ──WiFi/WebSocket──▶  WS server · ASR · integration  ──hooks/MCP──▶  Claude Code
-        S3R reference                          cargo install · pip install · Claude plugin
+```mermaid
+flowchart LR
+    Device["Device (Rust / esp-hal)<br/>hold-to-talk · Liz emotes · S3R reference"]
+    Bridge["Host bridge (Rust)<br/>WS server · ASR · integration"]
+    Agent["Claude Code<br/>(Cursor / Codex next)"]
+    Device -- "WiFi / WebSocket" --> Bridge
+    Bridge -- "hooks / MCP / tmux" --> Agent
+    Agent -- "agent state" --> Bridge
+    Bridge -- "emote state" --> Device
 ```
 
 The reusable core is the **host bridge / SDK** (Rust). The device is a thin, expressive client — S3R is the

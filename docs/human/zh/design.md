@@ -40,16 +40,18 @@
 
 ## 2. 架构
 
+```mermaid
+flowchart LR
+    Device["设备 —— AtomS3R + Echo Base(参考机)<br/>长按说话 → 16k PCM<br/>高刷新 Liz 表情动画<br/>按键 + IMU · RGB / 扬声器"]
+    Bridge["Host bridge / SDK(Rust)<br/>WS 服务端 · 双引擎 ASR<br/>Claude Code 集成 · mDNS"]
+    Agent["AI Agent<br/>Claude Code<br/>(Cursor / Codex 之后)"]
+    Device -- "WiFi / WebSocket · 二进制 PCM" --> Bridge
+    Bridge -- "状态下推 → 表情" --> Device
+    Bridge -- "hooks · MCP · tmux · 批准" --> Agent
+    Agent -- "事件" --> Bridge
 ```
-   设备(参考机:M5 AtomS3R + Echo Base)         Host bridge / SDK(Rust)            AI Agent
-   ┌───────────────────────────────┐    WiFi /      ┌──────────────────────────┐  hooks  ┌────────────┐
-   │ • 长按说话 → 16k PCM ──────────┼── WebSocket ──▶│ WS 服务端(设备主动连入)  │── MCP ─▶│ Claude Code│
-   │ • 高刷新状态动画(Liz 表情)   │   (二进制)     │ 双引擎 ASR                 │  tmux   │ (Cursor /  │
-   │ • 按键 + IMU 输入              │◀── 状态 ───────│ Claude Code 集成           │◀────────│  Codex →)  │
-   │ • RGB / 扬声器                 │   下推         │ mDNS 广播                  │ approve └────────────┘
-   └───────────────────────────────┘                └──────────────────────────┘
-   不绑定 S3R:任何讲 Vibird 协议的设备都行       交付:`cargo install` + `pip install`(PyO3/maturin)+ 一键 Claude Code 插件
-```
+
+> 不绑定 S3R —— 任何讲 Vibird 协议的设备都行。交付:`cargo install` + `pip install`(PyO3/maturin)+ 一键 Claude Code 插件。
 
 三层:
 

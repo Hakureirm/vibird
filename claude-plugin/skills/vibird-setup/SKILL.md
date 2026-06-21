@@ -12,9 +12,15 @@ user instead of making them read a manual.
 
 ## How the pieces fit
 
-```
-device (Liz face) ──WiFi/WebSocket──▶ vibird bridge (local) ──┬─ ASR → tmux-inject your input
-                  ◀── agent state ────────────────────────────┴─ control plane ◀─ this plugin's hooks
+```mermaid
+flowchart LR
+    Device["device (Liz face)"]
+    Bridge["vibird bridge (local)"]
+    Agent["Claude Code"]
+    Device -- "WiFi / WebSocket" --> Bridge
+    Bridge -- "ASR → tmux-inject" --> Agent
+    Agent -- "hooks → control plane" --> Bridge
+    Bridge -- "agent state" --> Device
 ```
 
 - This plugin's **hooks** already call `vibird hook <event>` on every turn — they push your state to the
