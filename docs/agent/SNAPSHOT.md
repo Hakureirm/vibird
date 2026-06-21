@@ -38,11 +38,14 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
   ([finding-rust-animation-feasibility](findings/finding-rust-animation-feasibility.md)).
 - **Colours: fixed AND user-confirmed on hardware (2026-06-21)** — the panel is BGR + Normal inversion
   ([finding-gc9107-color-order](findings/finding-gc9107-color-order.md)).
-- Current device render: the firmware drives the **.veap `Player`** (region-flush). **Verified on real
-  hardware (2026-06-21): it cycles all 7 agent-state placeholder emotes** (idle / listening / thinking /
-  working / awaiting_approval / done / error — distinct colour + motion) at **~18 fps**, switching every
-  2.5 s via `Player::next_clip`. The AA-vector renderer is the no-pack fallback. (Demo cycling stands in
-  until device networking drives clips by `SetState`.)
+- Current device render: full-canvas + **per-frame gravity-rotate** — the `.veap Player` accumulates into a
+  canvas, and each frame is counter-rotated by the **BMI270 gravity angle** so the emote stays upright to the
+  ground. Cycles all 7 agent-state placeholder emotes at **~48 fps** (full-screen blit; region-flush was
+  traded for gravity-levelling). The AA-vector renderer is the no-pack fallback.
+- **IMU gravity auto-upright (2026-06-21):** BMI270 at I2C **0x68** (chip `0x24`, verified — M5 docs' 0x69 is
+  wrong on this unit; firmware probes both) reads live gravity; the emote counter-rotates to stay upright.
+  **The rotation sign / zero-offset still needs one visual calibration round** (`ROT_SIGN` + axis); the IMU
+  itself is confirmed working (live `ax`/`ay`).
 
 ## Decisions just locked (2026-06-21)
 

@@ -31,7 +31,7 @@ reg 0x0E = <0..255>  # B-channel PWM = LCD brightness
 ## I2C buses (two separate ones — don't mix)
 | Bus | SDA | SCL | Devices |
 |---|---|---|---|
-| **Internal** | **45** | **0** | BMI270 IMU (**0x69**, fallback 0x68), LP5562 backlight (0x30) |
+| **Internal** | **45** | **0** | BMI270 IMU (**0x68** — verified on-device 2026-06-21; M5 docs say 0x69 but this unit ACKs 0x68, so probe both), LP5562 backlight (0x30) |
 | **Base / Grove** (Echo Base) | **38** | **39** | ES8311 codec (**0x18**), PI4IOE5V6408 IO-expander (**0x43**) |
 
 ## Audio — Atomic Echo Base (ES8311 + NS4150B)
