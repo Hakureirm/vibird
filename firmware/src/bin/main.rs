@@ -22,6 +22,8 @@ extern crate alloc;
 // config.rs / ws.rs 在 src/ 下(放 src/bin/ 会被 cargo 当成独立 binary),用 #[path] 引入。
 #[path = "../config.rs"]
 mod config;
+#[path = "../mdns.rs"]
+mod mdns;
 #[path = "../ws.rs"]
 mod ws;
 
@@ -30,7 +32,7 @@ use core::net::Ipv4Addr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use embassy_executor::Spawner;
-use embassy_futures::select::{select, Either};
+use embassy_futures::select::{Either, select};
 use embassy_net::tcp::TcpSocket;
 use embassy_net::{IpAddress, IpEndpoint, Runner, Stack, StackResources};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -39,28 +41,28 @@ use embassy_time::{Duration, Instant, Timer};
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_backtrace as _;
+use esp_hal::Async;
 use esp_hal::clock::CpuClock;
 use esp_hal::delay::Delay;
-use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull};
 use esp_hal::dma_buffers;
+use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull};
 use esp_hal::i2c::master::{Config as I2cConfig, I2c};
 use esp_hal::i2s::master::{Channels, Config as I2sConfig, DataFormat, I2s, I2sRx};
 use esp_hal::interrupt::software::SoftwareInterruptControl;
 use esp_hal::ram;
-use esp_hal::Async;
-use esp_hal::spi::master::{Config as SpiConfig, Spi};
 use esp_hal::spi::Mode;
+use esp_hal::spi::master::{Config as SpiConfig, Spi};
 use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
 use esp_radio::wifi::sta::StationConfig;
 use esp_radio::wifi::{Config as WifiConfig, ControllerConfig, Interface, WifiController};
 use log::{info, warn};
+use mipidsi::Builder;
 use mipidsi::interface::SpiInterface;
 use mipidsi::models::GC9107;
 use mipidsi::options::{ColorInversion, ColorOrder};
-use mipidsi::Builder;
 use vibird_emote::{Pack, Player};
-use vibird_protocol::{AgentState, AudioFormat, Caps, Downlink, Uplink, PROTOCOL_VERSION};
+use vibird_protocol::{AgentState, AudioFormat, Caps, Downlink, PROTOCOL_VERSION, Uplink};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -363,21 +365,37 @@ async fn bridge_task(
     if let Some(cfg) = stack.config_v4() {
         info!("DHCP 拿到 IP = {}", cfg.address);
     }
-    let Some((octets, port)) = config::parse_bridge_addr() else {
-        warn!("bridge 地址解析失败:{}", config::BRIDGE_ADDR);
-        return;
+    // 静态 bridge 地址(编译期配的);留空则每次连接前用 mDNS 自动发现。
+    let static_ep = config::parse_bridge_addr().map(|(o, port)| {
+        IpEndpoint::new(IpAddress::Ipv4(Ipv4Addr::new(o[0], o[1], o[2], o[3])), port)
+    });
+    // WS 握手的 Host 头(bridge 不校验其值)。
+    let host = if config::BRIDGE_ADDR.is_empty() {
+        "vibird-bridge.local"
+    } else {
+        config::BRIDGE_ADDR
     };
-    let ep = IpEndpoint::new(
-        IpAddress::Ipv4(Ipv4Addr::new(octets[0], octets[1], octets[2], octets[3])),
-        port,
-    );
-    let host = config::BRIDGE_ADDR;
 
     let mut rx = [0u8; 2048];
     let mut tx = [0u8; 2048];
     loop {
+        // 解析 bridge 端点:优先编译期配置,否则 mDNS 自动发现 _vibird._tcp。
+        let ep = match static_ep {
+            Some(ep) => ep,
+            None => match mdns::resolve(stack, &["_vibird", "_tcp", "local"], 4).await {
+                Some((ip, port)) => {
+                    info!("mDNS 发现 bridge {ip}:{port}");
+                    IpEndpoint::new(IpAddress::Ipv4(ip), port)
+                }
+                None => {
+                    warn!("mDNS 未发现 bridge;5s 后重试");
+                    Timer::after(Duration::from_secs(5)).await;
+                    continue;
+                }
+            },
+        };
         let mut sock = TcpSocket::new(stack, &mut rx, &mut tx);
-        info!("连 bridge {host} …");
+        info!("连 bridge {ep} …");
         if let Err(e) = sock.connect(ep).await {
             warn!("TCP 连接失败:{e:?};3s 重试");
             Timer::after(Duration::from_secs(3)).await;
@@ -421,7 +439,9 @@ async fn bridge_task(
             loop {
                 match ws::read_frame(&mut reader, &mut buf).await {
                     Ok((ws::TEXT, n)) => match serde_json::from_slice::<Downlink>(&buf[..n]) {
-                        Ok(Downlink::Welcome { protocol, .. }) => info!("Welcome(proto={protocol})"),
+                        Ok(Downlink::Welcome { protocol, .. }) => {
+                            info!("Welcome(proto={protocol})")
+                        }
                         Ok(Downlink::SetState(state)) => STATE_SIG.signal(state),
                         Ok(_) => {}
                         Err(_) => warn!("下行 JSON 解析失败"),
@@ -446,10 +466,9 @@ async fn bridge_task(
                         if let Ok(j) = serde_json::to_string(&Uplink::AudioStart {
                             sample_rate: 16_000,
                             format: AudioFormat::Pcm16Le,
-                        }) {
-                            if ws::send_text(&mut writer, &j).await.is_err() {
-                                break;
-                            }
+                        }) && ws::send_text(&mut writer, &j).await.is_err()
+                        {
+                            break;
                         }
                         sending = true;
                     }

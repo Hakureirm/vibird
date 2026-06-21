@@ -47,7 +47,7 @@ esp-rtos  = { version = "=0.3.0",  features = ["esp32s3", "embassy", "esp-radio"
 embassy-executor  = { version = "0.10.0", features = ["executor-thread"] }
 embassy-time      = "0.5.1"
 embassy-sync      = "0.8.0"
-embassy-net       = { version = "0.9.1", features = ["dhcpv4", "tcp", "dns", "medium-ethernet", "proto-ipv4"] }
+embassy-net       = { version = "0.9.1", features = ["dhcpv4", "tcp", "dns", "udp", "multicast", "medium-ethernet", "proto-ipv4"] }
 embassy-futures   = "0.1"
 static_cell       = "2.1"
 embedded-io-async = "0.7"   # 必须和 embassy-net 0.9.1 用的同版本,否则 TcpSocket 的 Read/Write trait 对不上

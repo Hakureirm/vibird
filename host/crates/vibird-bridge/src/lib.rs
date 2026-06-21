@@ -50,7 +50,7 @@ fn advertise_mdns(port: u16) -> Result<mdns_sd::ServiceDaemon> {
         "_vibird._tcp.local.",
         "vibird-bridge",
         "vibird-bridge.local.",
-        "",                                                  // 地址留空,靠 enable_addr_auto 自动探测各网卡
+        "", // 地址留空,靠 enable_addr_auto 自动探测各网卡
         port,
         None::<std::collections::HashMap<String, String>>,
     )?

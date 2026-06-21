@@ -32,9 +32,9 @@ pub const DEFAULT_BRIDGE_PORT: u16 = 8137;
 /// 方便没法按按键时验证麦克风采集 + 音频格式。正式构建不设此变量。
 pub const MIC_TEST: bool = option_env!("VIBIRD_MIC_TEST").is_some();
 
-/// 配置是否齐全(SSID + bridge 地址都非空)。
+/// 是否已配 WiFi(bridge 地址可空 —— 留空则靠 mDNS 自动发现 `_vibird._tcp`)。
 pub fn is_configured() -> bool {
-    !WIFI_SSID.is_empty() && !BRIDGE_ADDR.is_empty()
+    !WIFI_SSID.is_empty()
 }
 
 /// 解析 `BRIDGE_ADDR`(`a.b.c.d:port`,port 可省 → [`DEFAULT_BRIDGE_PORT`])成 `([u8;4], u16)`。
@@ -65,12 +65,18 @@ mod tests {
 
     #[test]
     fn parses_ip_and_port() {
-        assert_eq!(parse_addr("192.168.1.50:8137"), Some(([192, 168, 1, 50], 8137)));
+        assert_eq!(
+            parse_addr("192.168.1.50:8137"),
+            Some(([192, 168, 1, 50], 8137))
+        );
     }
 
     #[test]
     fn defaults_port_when_missing() {
-        assert_eq!(parse_addr("10.0.0.1"), Some(([10, 0, 0, 1], DEFAULT_BRIDGE_PORT)));
+        assert_eq!(
+            parse_addr("10.0.0.1"),
+            Some(([10, 0, 0, 1], DEFAULT_BRIDGE_PORT))
+        );
     }
 
     #[test]
