@@ -53,8 +53,10 @@ reference, not a requirement.
 
 ## Status
 
-Pre-alpha. Building toward **v0.1** (the voice loop) — see the roadmap in
-[`docs/human/en/design.md`](docs/human/en/design.md#6-roadmap).
+Pre-alpha, but **the v0.1 voice loop is now closed end-to-end on real hardware** (2026-06-21): the AtomS3R
+does hold-to-talk → ES8311 mic → I2S → WiFi/WebSocket → ASR → inject into Claude Code, and Claude Code's
+state drives the device's expressive face. Polish (mDNS, serial provisioning, Liz art) is what's left — see
+the roadmap in [`docs/human/en/design.md`](docs/human/en/design.md#6-roadmap).
 For the precise current state (what's built and hardware-verified), see
 [`docs/agent/SNAPSHOT.md`](docs/agent/SNAPSHOT.md).
 

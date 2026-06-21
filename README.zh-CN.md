@@ -46,8 +46,9 @@ flowchart LR
 
 ## 状态
 
-预览期(pre-alpha)。正在做 **v0.1**(语音闭环)—— 路线图见
-[`docs/human/zh/design.md`](docs/human/zh/design.md#6-路线图)。
+预览期(pre-alpha),但 **v0.1 语音闭环已在真机端到端跑通**(2026-06-21):AtomS3R 按键说话 → ES8311 麦克风
+→ I2S → WiFi/WebSocket → 转写 → 注入 Claude Code,反向 Claude Code 状态驱动设备表情脸。剩下的是打磨(mDNS、
+串口配网、Liz 美术)—— 路线图见 [`docs/human/zh/design.md`](docs/human/zh/design.md#6-路线图)。
 精确的当前状态(已做了什么、硬件验证了什么)见 [`docs/agent/SNAPSHOT.md`](docs/agent/SNAPSHOT.md)。
 
 ## 文档

@@ -2,11 +2,12 @@
 
 > Language: **English** · [中文](../zh/getting-started.md)
 
-> **Pre-alpha.** There's no released binary yet — you build from source. What works today: the full host
-> **"speak → ASR → inject into Claude Code" loop is closed and verified end-to-end on the Mac** (see
-> "Voice self-test without hardware" below) + the firmware **animation** on the AtomS3R (the `.veap` emote
-> pipeline is done and HW-verified). What's left: the device-firmware mic capture (WiFi/WS/I2S) and the real
-> Liz artwork. See [`../../agent/SNAPSHOT.md`](../../agent/SNAPSHOT.md) for the precise state.
+> **Pre-alpha.** There's no released binary yet — you build from source. **The full product loop is closed on
+> real hardware (2026-06-21):** on the AtomS3R, hold-to-talk → ES8311 mic → I2S → WiFi/WebSocket →
+> mlx-whisper ASR → inject into Claude Code; and the reverse, Claude Code state → bridge → the device's
+> expressive face (7 states). Plus a Mac-only software stand-in loop (see "Voice self-test without hardware"
+> below). What's left is polish: mDNS discovery, serial provisioning (no build-time creds), and the real Liz
+> artwork. See [`../../agent/SNAPSHOT.md`](../../agent/SNAPSHOT.md) for the precise state.
 
 ## Prerequisites
 

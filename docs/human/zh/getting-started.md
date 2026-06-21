@@ -2,10 +2,11 @@
 
 > 语言:[English](../en/getting-started.md) · **中文**
 
-> **预览期(pre-alpha)。** 还没有发布版二进制,需从源码构建。当前能跑的:整条 host 语音链路
-> **「语音 → ASR → 注入 Claude Code」已端到端闭环并在 Mac 上验证**(见下「免硬件语音自测」)+ AtomS3R 上的
-> 固件**动画**(.veap 表情管线已完成并真机验证)。剩下的是设备固件侧麦克风采集(WiFi/WS/I2S)+ Liz 真人设
-> 美术。精确状态见 [`../../agent/SNAPSHOT.md`](../../agent/SNAPSHOT.md)。
+> **预览期(pre-alpha)。** 还没有发布版二进制,需从源码构建。**完整产品环已在真机闭合(2026-06-21):**
+> AtomS3R 按键说话 → ES8311 麦克风 → I2S → WiFi/WebSocket → mlx-whisper 转写 → 注入 Claude Code;反向
+> Claude Code 状态 → bridge → 设备表情脸(7 态)。外加 Mac 纯软件替身环(见下「免硬件语音自测」)。剩下的是
+> 打磨:mDNS 自动发现、串口配网(免编译期填凭据)、Liz 真人设美术。精确状态见
+> [`../../agent/SNAPSHOT.md`](../../agent/SNAPSHOT.md)。
 
 ## 前置
 
