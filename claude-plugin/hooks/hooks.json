@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "vibird hook UserPromptSubmit" } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "vibird hook PreToolUse" } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "vibird hook PostToolUse" } ] }
+    ],
+    "Notification": [
+      { "hooks": [ { "type": "command", "command": "vibird hook Notification" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "vibird hook Stop" } ] }
+    ],
+    "SubagentStop": [
+      { "hooks": [ { "type": "command", "command": "vibird hook SubagentStop" } ] }
+    ]
+  }
+}

@@ -111,7 +111,20 @@ fn main() -> Result<()> {
         Cmd::Mcp => println!("TODO MCP server (rmcp, stdio)"),
         Cmd::Config => println!("TODO serial device configuration"),
         Cmd::Service { .. } => println!("TODO service install (launchd/systemd)"),
-        Cmd::Claude { .. } => println!("TODO Claude Code plugin install"),
+        Cmd::Claude { action } => match action {
+            ClaudeAction::Install => {
+                println!("Vibird 的 Claude Code 插件在仓库 claude-plugin/ 下。");
+                println!("安装(二选一):");
+                println!(
+                    "  1) Claude Code 里把本仓库加为 plugin marketplace,再 /plugin 启用 vibird;"
+                );
+                println!("  2) 把 claude-plugin/ 链接到 ~/.claude/plugins/vibird。");
+                println!("插件 hooks 会调用 `vibird hook`,先确保 `vibird serve` 在运行。");
+            }
+            ClaudeAction::Uninstall => {
+                println!("在 Claude Code /plugin 停用 vibird,或删除 ~/.claude/plugins/vibird。");
+            }
+        },
     }
     Ok(())
 }

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "vibird": {
+      "command": "vibird",
+      "args": ["mcp"]
+    }
+  }
+}

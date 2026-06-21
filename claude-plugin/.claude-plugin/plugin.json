@@ -1,0 +1,10 @@
+{
+  "name": "vibird",
+  "version": "0.1.0",
+  "description": "Vibird — voice + status companion. Pushes Claude Code's live state to your Vibird device (the Liz face) and lets you talk to Claude through it.",
+  "author": { "name": "Hakureirm", "email": "wbj010101@gmail.com" },
+  "homepage": "https://github.com/Hakureirm/vibird",
+  "repository": "https://github.com/Hakureirm/vibird",
+  "license": "AGPL-3.0-or-later",
+  "keywords": ["voice", "status", "esp32", "hardware", "companion"]
+}
