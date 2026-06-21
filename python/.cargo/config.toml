@@ -1,0 +1,4 @@
+# macOS 上构建 PyO3 扩展模块需要 dynamic_lookup(让 Python 符号在加载时再解析)。
+# maturin 会自动加这些参数;`cargo build` 直接构建 cdylib 时要手动给。仅 macOS 生效。
+[target.'cfg(target_os = "macos")']
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]

@@ -1,0 +1,19 @@
+[package]
+name = "vibird-python"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "AGPL-3.0-only"
+description = "Python bindings for the Vibird host bridge — pip install vibird."
+repository = "https://github.com/Hakureirm/vibird"
+
+[lib]
+name = "vibird"
+# Python 扩展模块。
+crate-type = ["cdylib"]
+
+[dependencies]
+# abi3:对单一稳定 ABI 构建,一个 wheel 跨多版本 Python。
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py39"] }
+vibird-bridge = { path = "../host/crates/vibird-bridge" }
+tokio = { version = "1", features = ["rt-multi-thread"] }

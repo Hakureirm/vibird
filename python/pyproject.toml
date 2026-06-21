@@ -1,0 +1,29 @@
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+name = "vibird"
+version = "0.1.0"
+description = "Voice + status companion for vibe coding — Python bindings for the Vibird host bridge, with a bundled Claude Code skill for zero-config setup."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "AGPL-3.0-or-later" }
+authors = [{ name = "Hakureirm", email = "wbj010101@gmail.com" }]
+keywords = ["voice", "status", "claude", "esp32", "companion"]
+classifiers = [
+  "Programming Language :: Rust",
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+]
+
+[project.urls]
+Homepage = "https://github.com/Hakureirm/vibird"
+Repository = "https://github.com/Hakureirm/vibird"
+
+[tool.maturin]
+# Rust crate 与本文件同目录;模块名 = vibird。
+manifest-path = "Cargo.toml"
+module-name = "vibird"
+# abi3 wheel 跨 Python 版本。
+features = ["pyo3/abi3-py39"]
