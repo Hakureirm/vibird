@@ -2,10 +2,13 @@
 //!
 //! - `Stub`:返回固定文本,用来在没有模型 / 网络时跑通整条语音闭环。
 //! - `Cloud`:OpenAI Whisper 兼容的 `/audio/transcriptions`(把 PCM 包成 WAV 后 multipart 上传)。
-//! - `Local`:本地 mlx-whisper(Mac M 系),shell 出去跑 `scripts/asr_local.py`(读 WAV → 打印文本),
-//!   纯本地、零网络、零云。配合 `vibird simulate` 可在没有硬件时端到端自测语音闭环。
+//! - `Local`:本地 **SenseVoice**(Mac M 系)。起一个**常驻** python 子进程(`scripts/asr_server.py`),
+//!   模型只加载一次,之后每句经 stdin/stdout 行协议转写(~0.5s),纯本地、零网络、零云。
+//!   配合 `vibird simulate` 可在没有硬件时端到端自测语音闭环。
 
 use anyhow::{Context, Result};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// 云端 ASR 配置(OpenAI Whisper 兼容)。
 #[derive(Clone)]
@@ -19,15 +22,24 @@ pub struct CloudConfig {
     pub language: Option<String>,
 }
 
-/// 本地 ASR 配置(shell 出去跑 mlx-whisper 脚本)。
+/// 本地 ASR 配置(常驻 SenseVoice 服务:子进程模型只加载一次)。
 #[derive(Clone)]
 pub struct LocalConfig {
     /// python 解释器。
     pub python: String,
-    /// 转写脚本路径(读 WAV → 打印文本)。
+    /// 常驻服务脚本(`scripts/asr_server.py`:stdin 读 WAV 路径、stdout 回转写)。
     pub script: String,
-    /// HF 模型(如 `mlx-community/whisper-tiny`)。
-    pub model: String,
+    /// 识别语言(SenseVoice:`zh` / `en` / `auto` / …)。
+    pub language: String,
+    /// 懒启动的常驻子进程(模型常驻内存),跨连接共享;挂了下次自动重启。
+    server: Arc<Mutex<Option<AsrServer>>>,
+}
+
+/// 常驻 ASR 子进程句柄:stdin 写 WAV 路径,stdout 读一行转写。
+struct AsrServer {
+    _child: tokio::process::Child,
+    stdin: tokio::process::ChildStdin,
+    stdout: tokio::io::Lines<tokio::io::BufReader<tokio::process::ChildStdout>>,
 }
 
 /// ASR 后端。
@@ -70,17 +82,17 @@ impl Asr {
         }))
     }
 
-    /// 从环境变量装配本地后端:`VIBIRD_ASR_PY` / `VIBIRD_ASR_SCRIPT` / `VIBIRD_ASR_MODEL`。
+    /// 从环境变量装配本地后端:`VIBIRD_ASR_PY` / `VIBIRD_ASR_SCRIPT`(常驻服务脚本)/ `VIBIRD_ASR_LANG`。
     pub fn local_from_env() -> Result<Self> {
         let python = std::env::var("VIBIRD_ASR_PY").unwrap_or_else(|_| "python3".to_string());
         let script = std::env::var("VIBIRD_ASR_SCRIPT")
-            .context("缺环境变量 VIBIRD_ASR_SCRIPT(本地转写脚本路径,如 scripts/asr_local.py)")?;
-        let model = std::env::var("VIBIRD_ASR_MODEL")
-            .unwrap_or_else(|_| "mlx-community/whisper-tiny".to_string());
+            .context("缺环境变量 VIBIRD_ASR_SCRIPT(常驻 ASR 服务脚本,如 scripts/asr_server.py)")?;
+        let language = std::env::var("VIBIRD_ASR_LANG").unwrap_or_else(|_| "zh".to_string());
         Ok(Asr::Local(LocalConfig {
             python,
             script,
-            model,
+            language,
+            server: Arc::new(Mutex::new(None)),
         }))
     }
 
@@ -147,7 +159,7 @@ async fn cloud_transcribe(c: &CloudConfig, pcm: &[i16], sample_rate: u32) -> Res
         .to_string())
 }
 
-/// 本地转写:把 PCM 写成临时 WAV,shell 出去跑 mlx-whisper 脚本,读 stdout。
+/// 本地转写:写临时 WAV → 经**常驻** SenseVoice 子进程(行协议)转写;模型常驻、只加载一次。
 async fn local_transcribe(c: &LocalConfig, pcm: &[i16], sample_rate: u32) -> Result<String> {
     use std::sync::atomic::{AtomicU64, Ordering};
     static SEQ: AtomicU64 = AtomicU64::new(0);
@@ -158,20 +170,68 @@ async fn local_transcribe(c: &LocalConfig, pcm: &[i16], sample_rate: u32) -> Res
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
     tokio::fs::write(&path, &wav).await?;
-    let out = tokio::process::Command::new(&c.python)
-        .arg(&c.script)
-        .arg(&path)
-        .arg(&c.model)
-        .output()
-        .await
-        .context("启动本地 ASR 脚本失败")?;
+    // 调试:留一份最近收到的音频,便于离线分析电平 / 试别的 ASR(不影响转写)。
+    let _ = tokio::fs::write("/tmp/vibird_last.wav", &wav).await;
+    let path_str = path.to_string_lossy().into_owned();
+
+    // 锁住常驻服务;没起则懒启动(首次加载模型 ~数秒);转写出错则丢弃句柄,下次自动重启。
+    let result = {
+        let mut guard = c.server.lock().await;
+        if guard.is_none() {
+            *guard = Some(spawn_asr_server(c).await?);
+        }
+        let srv = guard.as_mut().unwrap();
+        match server_transcribe(srv, &path_str).await {
+            Ok(t) => Ok(t),
+            Err(e) => {
+                *guard = None;
+                Err(e)
+            }
+        }
+    };
     let _ = tokio::fs::remove_file(&path).await;
-    anyhow::ensure!(
-        out.status.success(),
-        "本地 ASR 失败:{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    result
+}
+
+/// 启动常驻 ASR 服务子进程,等它打印 `READY`(模型加载完)。
+async fn spawn_asr_server(c: &LocalConfig) -> Result<AsrServer> {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    let mut child = tokio::process::Command::new(&c.python)
+        .arg(&c.script)
+        .arg(&c.language)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .context("启动常驻 ASR 服务失败")?;
+    let stdin = child.stdin.take().context("ASR 服务无 stdin")?;
+    let stdout = child.stdout.take().context("ASR 服务无 stdout")?;
+    let mut lines = BufReader::new(stdout).lines();
+    tracing::info!("ASR 常驻服务启动中(加载 SenseVoice,首次约数秒)…");
+    loop {
+        match lines.next_line().await? {
+            Some(l) if l.trim() == "READY" => break,
+            Some(_) => continue, // 加载噪声(应在 stderr;保险跳过)
+            None => anyhow::bail!("ASR 服务未就绪即退出(检查 funasr / 模型)"),
+        }
+    }
+    tracing::info!("ASR 常驻服务就绪");
+    Ok(AsrServer {
+        _child: child,
+        stdin,
+        stdout: lines,
+    })
+}
+
+/// 行协议转写一句:写 WAV 路径 → 读一行结果。
+async fn server_transcribe(srv: &mut AsrServer, path: &str) -> Result<String> {
+    use tokio::io::AsyncWriteExt;
+    srv.stdin.write_all(path.as_bytes()).await?;
+    srv.stdin.write_all(b"\n").await?;
+    srv.stdin.flush().await?;
+    match srv.stdout.next_line().await? {
+        Some(t) => Ok(t.trim().to_string()),
+        None => anyhow::bail!("ASR 服务无响应(可能已退出)"),
+    }
 }
 
 #[cfg(test)]

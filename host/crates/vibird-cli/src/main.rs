@@ -29,7 +29,11 @@ enum Cmd {
         /// tmux target (session/window/pane) to inject transcripts into; omit to only log.
         #[arg(long)]
         tmux: Option<String>,
-        /// ASR backend: `stub` / `cloud` (VIBIRD_ASR_* env) / `local` (mlx-whisper via VIBIRD_ASR_SCRIPT).
+        /// macOS only: inject transcripts into the FOREGROUND window via keystroke (no tmux needed).
+        /// Needs Accessibility permission for the terminal running the bridge. Overrides --tmux.
+        #[arg(long)]
+        keystroke: bool,
+        /// ASR backend: `stub` / `cloud` (VIBIRD_ASR_* env) / `local` (SenseVoice via VIBIRD_ASR_SCRIPT).
         #[arg(long, default_value = "stub")]
         asr: String,
     },
@@ -83,15 +87,23 @@ fn main() -> Result<()> {
         .init();
 
     match Cli::parse().cmd {
-        Cmd::Serve { port, tmux, asr } => {
+        Cmd::Serve {
+            port,
+            tmux,
+            keystroke,
+            asr,
+        } => {
             let asr = match asr.as_str() {
                 "cloud" => vibird_bridge::Asr::cloud_from_env()?,
                 "local" => vibird_bridge::Asr::local_from_env()?,
                 _ => vibird_bridge::Asr::stub(),
             };
-            let inject = match tmux {
-                Some(t) => vibird_bridge::Inject::tmux(t),
-                None => vibird_bridge::Inject::default(),
+            let inject = if keystroke {
+                vibird_bridge::Inject::keystroke()
+            } else if let Some(t) = tmux {
+                vibird_bridge::Inject::tmux(t)
+            } else {
+                vibird_bridge::Inject::default()
             };
             let config = vibird_bridge::Config { asr, inject };
             let rt = tokio::runtime::Runtime::new()?;
