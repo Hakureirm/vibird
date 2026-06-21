@@ -38,9 +38,11 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
   ([finding-rust-animation-feasibility](findings/finding-rust-animation-feasibility.md)).
 - **Colours: fixed AND user-confirmed on hardware (2026-06-21)** — the panel is BGR + Normal inversion
   ([finding-gc9107-color-order](findings/finding-gc9107-color-order.md)).
-- Current device render: the firmware drives the **.veap `Player`** (region-flush) playing an embedded
-  procedural placeholder (breathing dot); the AA-vector renderer is the no-pack fallback. **Flashed +
-  verified on real hardware (2026-06-21): ~23 fps** (`/dev/cu.usbmodem101`, serial `vibird emote: 23 frames/s`).
+- Current device render: the firmware drives the **.veap `Player`** (region-flush). **Verified on real
+  hardware (2026-06-21): it cycles all 7 agent-state placeholder emotes** (idle / listening / thinking /
+  working / awaiting_approval / done / error — distinct colour + motion) at **~18 fps**, switching every
+  2.5 s via `Player::next_clip`. The AA-vector renderer is the no-pack fallback. (Demo cycling stands in
+  until device networking drives clips by `SetState`.)
 
 ## Decisions just locked (2026-06-21)
 
@@ -57,8 +59,8 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
 - **Emote pipeline** (ADR-0004): **complete** ✓ — the `.veap` format + `vibird-emote` crate (parser +
   `Player` + packer-lib, 6 tests) + the `vibird-emote-pack` CLI (GIF→.veap, e2e-verified) + the **firmware
   region-flush player** (embeds `assets/placeholder.veap`). **HW-verified on the real AtomS3R (2026-06-21):
-  the placeholder plays at ~23 fps via region-flush** (serial: `vibird emote: 23 frames/s`). Remaining: real
-  **Liz art** (Live2D).
+  it cycles all 7 agent-state placeholder emotes at ~18 fps via region-flush** (`Player::next_clip` every
+  2.5 s; serial: `emote clip → listening …`). Remaining: real **Liz art** (Live2D).
 - **Liz art** (ADR-0005): not produced; **the production approach (Live2D / commission / AI) is the next
   decision.**
 - **Host bridge** (`host/`): **voice loop + status display built (host side)** ✓ — WS server + audio

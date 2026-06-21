@@ -363,6 +363,18 @@ impl<'a> Player<'a> {
         false
     }
 
+    /// 切到下一个片段(环形;无网络时用于轮播展示所有表情)。
+    pub fn next_clip(&mut self) {
+        let n = self.pack.clip_count();
+        if n == 0 {
+            return;
+        }
+        self.clip_idx = (self.clip_idx + 1) % n;
+        self.frame = 0;
+        self.elapsed_ms = 0;
+        self.pending_first = true;
+    }
+
     /// 推进 `dt_ms`。
     ///
     /// 返回 `Some(frame)` 表示该应用一帧:片段刚开始时是第 0 帧(全画布),之后是到点的下一帧
@@ -713,5 +725,9 @@ mod tests {
         assert_eq!(p.tick(0).unwrap().rect_count(), 1); // busy 第 0 帧
         assert!(p.tick(1000).is_none()); // 单帧非循环 → 停住
         assert!(!p.set_clip("nope"));
+
+        // next_clip 环形轮播:busy(idx 1)→ idle(idx 0)
+        p.next_clip();
+        assert_eq!(p.clip().unwrap().name(), "idle");
     }
 }

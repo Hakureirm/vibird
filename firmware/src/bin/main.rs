@@ -272,6 +272,8 @@ fn main() -> ! {
             const STEP_MS: u32 = 5;
             let mut fps_t0 = Instant::now();
             let mut frames_n: u32 = 0;
+            // 无网络时:每 2.5s 轮播到下一个状态表情,展示全部片段。将来 SetState 用 set_clip 替代。
+            let mut clip_t0 = Instant::now();
             loop {
                 if let Some(frame) = player.tick(STEP_MS) {
                     // 只刷脏矩形 —— 区域刷新
@@ -288,6 +290,13 @@ fn main() -> ! {
                     info!("vibird emote: {} frames/s", frames_n);
                     frames_n = 0;
                     fps_t0 = Instant::now();
+                }
+                if clip_t0.elapsed() >= Duration::from_millis(2500) {
+                    player.next_clip();
+                    if let Some(c) = player.clip() {
+                        info!("emote clip → {}", c.name());
+                    }
+                    clip_t0 = Instant::now();
                 }
                 delay.delay_millis(STEP_MS);
             }
