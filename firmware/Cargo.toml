@@ -34,6 +34,21 @@ libm = "0.2"
 # 表情包解析 + 播放器(no_std,无 alloc 的解析/播放;只用默认特性 = 不带 std)
 vibird-emote = { path = "../emote", default-features = false }
 
+# 设备↔桥接 线协议(no_std + alloc,与 host 同一套类型)+ no_std JSON 编解码
+vibird-protocol = { path = "../protocol" }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+
+# WiFi + 异步运行时(esp-hal 1.1 栈:esp-radio 取代 esp-wifi,esp-rtos 取代 esp-hal-embassy)
+esp-radio = { version = "=0.18.0", features = ["esp32s3", "wifi", "unstable", "esp-alloc"] }
+esp-rtos  = { version = "=0.3.0",  features = ["esp32s3", "embassy", "esp-radio", "esp-alloc"] }
+embassy-executor  = { version = "0.10.0", features = ["executor-thread"] }
+embassy-time      = "0.5.1"
+embassy-sync      = "0.8.0"
+embassy-net       = { version = "0.9.1", features = ["dhcpv4", "tcp", "dns", "medium-ethernet", "proto-ipv4"] }
+embassy-futures   = "0.1"
+static_cell       = "2.1"
+embedded-io-async = "0.7"   # 必须和 embassy-net 0.9.1 用的同版本,否则 TcpSocket 的 Read/Write trait 对不上
+
 
 # For fine tuning these settings, please refer to https://doc.rust-lang.org/cargo/reference/profiles.html
 [profile.dev]

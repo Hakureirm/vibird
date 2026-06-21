@@ -87,10 +87,16 @@ The whole **"speak → ASR → inject into Claude Code"** loop is **closed and v
   agent-state to the device face from Claude Code hooks; the **MCP server** (`vibird mcp`, hand-rolled stdio
   JSON-RPC) and the **Claude Code plugin** (`claude-plugin/`: hooks + MCP + zero-config skill) are built ✓.
   The **`pip install` scaffold** (`python/`, PyO3 + maturin, `vibird.serve(...)`) builds ✓ too.
-- **Device-side audio (in progress):** button **push-to-talk** (GPIO41) drives the `listening` emote ✓; the
-  **Atomic Echo Base is detected present on hardware** (ES8311 @0x18 + PI4IOE @0x43, base I2C 38/39) ✓. Next:
-  ES8311 + I2S mic capture (16 kHz PCM; `es8311` crate ready) → WiFi/WS upload to the bridge.
-- Still TODO: mDNS advertise, `config`/`service` CLI, WiFi/WS client + the mic capture above (for end-to-end).
+- **Device-side network firmware (branch `feat/firmware-wifi`):** the firmware was **migrated from a blocking
+  loop to embassy async** and now carries the full on-device stack — **WiFi STA (`esp-radio` 0.18, the
+  esp-hal-1.1 successor to `esp-wifi`) + `esp-rtos` scheduler + `embassy-net` + a hand-rolled no_std
+  WebSocket client (`ws.rs`) + the shared `vibird-protocol` types via no_std `serde_json`**. It connects to
+  the bridge, sends `Hello`, and maps `SetState` downlinks → `.veap` emote clips. **Gate 1 (compiles) +
+  offline-mode HW-verified (2026-06-21): boots under embassy, renders the 7 emotes at ~18 fps, Echo Base
+  ES8311 @0x18 detected.** WiFi credentials inject at build time (`VIBIRD_WIFI_SSID/PASS/BRIDGE_ADDR` via
+  `config.rs`). **Pending (need WiFi creds + on-network test):** STA connect → WS handshake → downlink-drives-
+  face (Gates 2–4), then ES8311 + I2S mic capture → WS PCM upload (Gate 5).
+- Still TODO: mDNS advertise, `config`/`service` CLI, the mic-capture upload above (the last device half).
 
 ## Documentation map
 

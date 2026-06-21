@@ -1,214 +1,111 @@
-//! Vibird firmware — animation spike (v0.3: smooth anti-aliased vector style).
+//! Vibird 固件 —— 完整端到端(embassy 异步 + WiFi/WebSocket + 表情)。
 //!
-//! Verified at high FPS on real hardware. This iteration drops pixel-art for a clean, anti-aliased
-//! vector look that suits the colour LCD: soft-edged rounded shapes composited with coverage-based AA
-//! (no sqrt — squared-distance edges), a precomputed gradient backdrop, gentle breathing, and smooth
-//! blinks. No fake drop-shadows. ESP32-S3 has an FPU, so the per-pixel f32 math is cheap.
+//! 架构(单核 thread executor,由 esp-rtos 提供):
+//!   - `main`(本任务):初始化外设 → 起 WiFi/网络/桥接任务 → 跑**显示循环**(.veap 区域刷新)。
+//!   - `net_task`:embassy-net 协议栈。
+//!   - `wifi_conn`:STA 连接 / 重连。
+//!   - `bridge_task`:TCP+WebSocket 连 bridge,发 Hello,收 SetState 下行 → 经 `STATE_SIG` 驱动表情。
 //!
-//! Pins (source-verified — see docs/research/atoms3r-hardware.md):
-//!   Display GC9107 (SPI2): SCLK=15, MOSI=21, CS=14, DC=42, RST=48; 40 MHz; panel 128x128, offset_y=32.
-//!   Backlight: LP5562 LED driver on internal I2C (SDA=45, SCL=0), addr 0x30, brightness = reg 0x0E.
+//! 下行状态(bridge → 设备)闭合「状态显示」半环;按键 push-to-talk 的麦克风上行(ES8311+I2S)是 Gate 5。
+//! WiFi 凭据 + bridge 地址在编译期由 `config` 注入(见 config.rs)。
+//!
+//! 引脚(源码核对 —— 见 docs/agent/atoms3r-hardware.md):
+//!   显示 GC9107(SPI2): SCLK=15, MOSI=21, CS=14, DC=42, RST=48;40 MHz;128x128,offset_y=32。
+//!   背光 LP5562:内部 I2C(SDA=45, SCL=0),地址 0x30。
+//!   按键(整面):GPIO41 低有效。Echo Base:base I2C(SDA=38, SCL=39),ES8311 @0x18。
 
 #![no_std]
 #![no_main]
 
 extern crate alloc;
 
-use alloc::vec::Vec;
-use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
+// config.rs / ws.rs 在 src/ 下(放 src/bin/ 会被 cargo 当成独立 binary),用 #[path] 引入。
+#[path = "../config.rs"]
+mod config;
+#[path = "../ws.rs"]
+mod ws;
+
+use alloc::string::String;
+use core::net::Ipv4Addr;
+
+use embassy_executor::Spawner;
+use embassy_net::tcp::TcpSocket;
+use embassy_net::{IpAddress, IpEndpoint, Runner, Stack, StackResources};
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::signal::Signal;
+use embassy_time::{Duration, Instant, Timer};
+use embedded_graphics::pixelcolor::Rgb565;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_backtrace as _;
-use esp_hal::{
-    clock::CpuClock,
-    delay::Delay,
-    gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
-    i2c::master::{Config as I2cConfig, I2c},
-    main,
-    spi::{
-        Mode,
-        master::{Config as SpiConfig, Spi},
-    },
-    time::{Duration, Instant, Rate},
-};
-use libm::sinf;
+use esp_hal::clock::CpuClock;
+use esp_hal::delay::Delay;
+use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull};
+use esp_hal::i2c::master::{Config as I2cConfig, I2c};
+use esp_hal::interrupt::software::SoftwareInterruptControl;
+use esp_hal::ram;
+use esp_hal::spi::master::{Config as SpiConfig, Spi};
+use esp_hal::spi::Mode;
+use esp_hal::time::Rate;
+use esp_hal::timer::timg::TimerGroup;
+use esp_radio::wifi::sta::StationConfig;
+use esp_radio::wifi::{Config as WifiConfig, ControllerConfig, Interface, WifiController};
 use log::{info, warn};
-use mipidsi::{
-    Builder,
-    interface::SpiInterface,
-    models::GC9107,
-    options::{ColorInversion, ColorOrder},
-};
+use mipidsi::interface::SpiInterface;
+use mipidsi::models::GC9107;
+use mipidsi::options::{ColorInversion, ColorOrder};
+use mipidsi::Builder;
 use vibird_emote::{Pack, Player};
+use vibird_protocol::{AgentState, Caps, Downlink, Uplink, PROTOCOL_VERSION};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
-const W: i32 = 128;
-const H: i32 = 128;
+const W: u16 = 128;
+const H: u16 = 128;
 const LP5562_ADDR: u8 = 0x30;
 
-/// 内嵌占位表情包(呼吸青点);Liz 美术到位后换成正式 .veap(见 assets/placeholder.veap)。
+/// 内嵌占位表情包(7 态);Liz 美术到位后换正式 .veap。
 static PLACEHOLDER: &[u8] = include_bytes!("../../../assets/placeholder.veap");
 
-/// 把 .veap 的原始 RGB565(u16)转成 embedded-graphics 的 Rgb565。
+/// bridge 下行的最新 AgentState → 显示循环(Signal 自动只留最新值)。
+static STATE_SIG: Signal<CriticalSectionRawMutex, AgentState> = Signal::new();
+
+/// 把值放进 'static StaticCell,返回 &'static mut(embassy 任务 / 资源需要 'static)。
+macro_rules! mk_static {
+    ($t:ty, $v:expr) => {{
+        static CELL: static_cell::StaticCell<$t> = static_cell::StaticCell::new();
+        CELL.uninit().write($v)
+    }};
+}
+
 #[inline]
 fn rgb565_from_raw(c: u16) -> Rgb565 {
     Rgb565::new((c >> 11) as u8, ((c >> 5) & 0x3f) as u8, (c & 0x1f) as u8)
 }
 
-#[inline]
-fn clamp01(x: f32) -> f32 {
-    x.clamp(0.0, 1.0)
-}
-
-/// Blend two Rgb565 colours in 5/6/5 space.
-#[inline]
-fn lerp_col(a: Rgb565, b: Rgb565, t: f32) -> Rgb565 {
-    let t = clamp01(t);
-    let r = a.r() as f32 + (b.r() as f32 - a.r() as f32) * t;
-    let g = a.g() as f32 + (b.g() as f32 - a.g() as f32) * t;
-    let bl = a.b() as f32 + (b.b() as f32 - a.b() as f32) * t;
-    Rgb565::new((r + 0.5) as u8, (g + 0.5) as u8, (bl + 0.5) as u8)
-}
-
-/// Off-screen 128x128 framebuffer.
-struct Fb {
-    px: Vec<Rgb565>,
-}
-impl Fb {
-    fn new() -> Self {
-        Self {
-            px: alloc::vec![Rgb565::BLACK; (W * H) as usize],
-        }
-    }
-    #[inline]
-    fn idx(x: i32, y: i32) -> usize {
-        (y * W + x) as usize
-    }
-    /// Alpha-blend `col` at (x,y) with coverage `a`.
-    #[inline]
-    fn blend(&mut self, x: i32, y: i32, col: Rgb565, a: f32) {
-        if a <= 0.0 || !(0..W).contains(&x) || !(0..H).contains(&y) {
-            return;
-        }
-        let i = Self::idx(x, y);
-        self.px[i] = if a >= 1.0 {
-            col
-        } else {
-            lerp_col(self.px[i], col, a)
-        };
+/// AgentState → 表情包 clip 名(与 assets/placeholder.veap 的 7 个 clip 一一对齐)。
+fn clip_for(state: &AgentState) -> &'static str {
+    match state {
+        AgentState::Idle => "idle",
+        AgentState::Listening => "listening",
+        AgentState::Thinking => "thinking",
+        AgentState::Working { .. } => "working",
+        AgentState::AwaitingApproval { .. } => "awaiting_approval",
+        AgentState::Done => "done",
+        AgentState::Error { .. } => "error",
     }
 }
 
-/// Anti-aliased filled ellipse (coverage from squared distance — no sqrt).
-fn ellipse(fb: &mut Fb, cx: f32, cy: f32, rx: f32, ry: f32, col: Rgb565, alpha: f32) {
-    let edgek = rx.min(ry) * 0.5; // ~1px AA band
-    let x0 = (cx - rx - 1.0) as i32;
-    let x1 = (cx + rx + 1.0) as i32;
-    let y0 = (cy - ry - 1.0) as i32;
-    let y1 = (cy + ry + 1.0) as i32;
-    for y in y0..=y1 {
-        for x in x0..=x1 {
-            let dx = (x as f32 + 0.5 - cx) / rx;
-            let dy = (y as f32 + 0.5 - cy) / ry;
-            let d2 = dx * dx + dy * dy;
-            let cov = clamp01((1.0 - d2) * edgek + 0.5);
-            fb.blend(x, y, col, cov * alpha);
-        }
-    }
-}
-
-#[inline]
-fn disc(fb: &mut Fb, cx: f32, cy: f32, r: f32, col: Rgb565, alpha: f32) {
-    ellipse(fb, cx, cy, r, r, col, alpha);
-}
-
-/// AA filled triangle (2x2 supersample) — used for the little beak.
-fn tri(fb: &mut Fb, p: [(f32, f32); 3], col: Rgb565) {
-    let minx = (p[0].0.min(p[1].0).min(p[2].0) - 1.0) as i32;
-    let maxx = (p[0].0.max(p[1].0).max(p[2].0) + 1.0) as i32;
-    let miny = (p[0].1.min(p[1].1).min(p[2].1) - 1.0) as i32;
-    let maxy = (p[0].1.max(p[1].1).max(p[2].1) + 1.0) as i32;
-    let edge = |ax: f32, ay: f32, bx: f32, by: f32, px: f32, py: f32| {
-        (px - ax) * (by - ay) - (py - ay) * (bx - ax)
-    };
-    for y in miny..=maxy {
-        for x in minx..=maxx {
-            let mut cov = 0.0f32;
-            for &sy in &[0.25f32, 0.75] {
-                for &sx in &[0.25f32, 0.75] {
-                    let px = x as f32 + sx;
-                    let py = y as f32 + sy;
-                    let d0 = edge(p[0].0, p[0].1, p[1].0, p[1].1, px, py);
-                    let d1 = edge(p[1].0, p[1].1, p[2].0, p[2].1, px, py);
-                    let d2 = edge(p[2].0, p[2].1, p[0].0, p[0].1, px, py);
-                    if (d0 >= 0.0 && d1 >= 0.0 && d2 >= 0.0)
-                        || (d0 <= 0.0 && d1 <= 0.0 && d2 <= 0.0)
-                    {
-                        cov += 0.25;
-                    }
-                }
-            }
-            fb.blend(x, y, col, cov);
-        }
-    }
-}
-
-/// Draw the Vibird character at animation time `t` (seconds).
-fn draw_vibird(fb: &mut Fb, t: f32) {
-    // palette
-    let body = Rgb565::new(14, 47, 31);
-    let cream = Rgb565::new(31, 61, 30);
-    let eye = Rgb565::new(2, 6, 8);
-    let beak = Rgb565::new(31, 42, 6);
-    let cheek = Rgb565::new(31, 30, 21);
-
-    let bob = sinf(t * 2.3) * 3.0;
-    let cx = 64.0;
-    let cy = 62.0 + bob;
-    let breath = 1.0 + sinf(t * 2.3) * 0.02;
-
-    // smooth blink: a quick dip every ~3 s
-    let cyc = {
-        let v = t * 0.33;
-        v - libm::floorf(v)
-    };
-    let closed = if cyc < 0.07 {
-        sinf(cyc / 0.07 * core::f32::consts::PI)
-    } else {
-        0.0
-    };
-    let ery = 9.0 * (1.0 - 0.9 * closed);
-
-    // body (flat, clean — no outline, no shadow)
-    ellipse(fb, cx, cy, 35.0, 39.0 * breath, body, 1.0);
-    // belly / chest
-    ellipse(fb, cx, cy + 17.0, 24.0, 22.0, cream, 1.0);
-    // cheeks (soft blush)
-    disc(fb, cx - 22.0, cy + 2.0, 6.5, cheek, 0.5);
-    disc(fb, cx + 22.0, cy + 2.0, 6.5, cheek, 0.5);
-    // eyes (glossy, with catchlight) — blink squashes ery
-    ellipse(fb, cx - 14.0, cy - 8.0, 9.0, ery, eye, 1.0);
-    ellipse(fb, cx + 14.0, cy - 8.0, 9.0, ery, eye, 1.0);
-    if ery > 4.0 {
-        disc(fb, cx - 17.0, cy - 11.0, 2.6, Rgb565::WHITE, 0.95);
-        disc(fb, cx + 11.0, cy - 11.0, 2.6, Rgb565::WHITE, 0.95);
-    }
-    // little beak (downward triangle), just under the eyes
-    tri(
-        fb,
-        [(cx, cy + 2.0), (cx - 5.0, cy - 4.0), (cx + 5.0, cy - 4.0)],
-        beak,
-    );
-}
-
-#[main]
-fn main() -> ! {
+#[esp_rtos::main]
+async fn main(spawner: Spawner) {
     esp_println::logger::init_logger_from_env();
     let p = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
-    esp_alloc::heap_allocator!(size: 140 * 1024);
+    // 双堆(对齐 esp-radio 官方示例):reclaimed 区(二级 bootloader 用完回收的 RAM)主要给 esp-radio,
+    // 常规区给显示 + 表情 + serde。真机 OOM 再调。
+    esp_alloc::heap_allocator!(#[ram(reclaimed)] size: 64 * 1024);
+    esp_alloc::heap_allocator!(size: 72 * 1024);
     let mut delay = Delay::new();
 
-    // ---- Backlight: LP5562 on internal I2C (SDA=45, SCL=0) ----
+    // ---- 背光 LP5562(内部 I2C SDA=45 SCL=0)----
     {
         let mut i2c = I2c::new(p.I2C0, I2cConfig::default())
             .unwrap()
@@ -221,7 +118,7 @@ fn main() -> ! {
         info!("backlight (LP5562) on");
     }
 
-    // ---- Display GC9107 over SPI2 ----
+    // ---- 显示 GC9107(SPI2)----
     let spi = Spi::new(
         p.SPI2,
         SpiConfig::default()
@@ -238,121 +135,240 @@ fn main() -> ! {
     let mut if_buf = alloc::vec![0u8; 4096];
     let di = SpiInterface::new(spi_dev, dc, &mut if_buf);
     let mut display = Builder::new(GC9107, di)
-        .display_size(W as u16, H as u16)
+        .display_size(W, H)
         .display_offset(0, 32)
         .invert_colors(ColorInversion::Normal)
-        .color_order(ColorOrder::Bgr) // this AtomS3R panel is BGR (red<->blue swap confirmed)
+        .color_order(ColorOrder::Bgr) // 此 AtomS3R 面板是 BGR(已真机确认)
         .reset_pin(rst)
         .init(&mut delay)
         .unwrap();
     info!("display (GC9107) init ok");
 
-    // ---- Button (GPIO41, active-low) = push-to-talk ----
+    // ---- 按键 GPIO41(低有效)= push-to-talk ----
     let button = Input::new(p.GPIO41, InputConfig::default().with_pull(Pull::Up));
 
-    // ---- Base I2C (38/39): probe the Atomic Echo Base (ES8311 0x18 + PI4IOE 0x43) ----
-    let mut base = I2c::new(p.I2C1, I2cConfig::default())
-        .unwrap()
-        .with_sda(p.GPIO38)
-        .with_scl(p.GPIO39);
-    let mut pb = [0u8; 1];
-    let es8311_present = base.read(0x18u8, &mut pb).is_ok();
-    let pi4ioe_present = base.read(0x43u8, &mut pb).is_ok();
-    if es8311_present {
-        info!("Echo Base ES8311 @0x18 present (pi4ioe@0x43={pi4ioe_present})");
+    // ---- Echo Base 探测(base I2C 38/39)----
+    {
+        let mut base = I2c::new(p.I2C1, I2cConfig::default())
+            .unwrap()
+            .with_sda(p.GPIO38)
+            .with_scl(p.GPIO39);
+        let mut pb = [0u8; 1];
+        if base.read(0x18u8, &mut pb).is_ok() {
+            info!("Echo Base ES8311 @0x18 present");
+        } else {
+            warn!("Echo Base 未检测到(麦克风上行 Gate 5 需要它)");
+        }
+    }
+
+    // ---- esp-rtos 调度器(必须在 radio 之前)----
+    let timg0 = TimerGroup::new(p.TIMG0);
+    let sw_int = SoftwareInterruptControl::new(p.SW_INTERRUPT);
+    esp_rtos::start(timg0.timer0, sw_int.software_interrupt0);
+
+    // ---- WiFi + 网络(仅当配置齐全才起;否则离线轮播表情)----
+    let online = config::is_configured();
+    if online {
+        match esp_radio::wifi::new(p.WIFI, ControllerConfig::default()) {
+            Ok((controller, interfaces)) => {
+                let seed = 0x1234_5678_9abc_def0u64; // 固定 seed(无 RNG;局域网够用)
+                let resources = mk_static!(StackResources<4>, StackResources::new());
+                let (stack, runner) = embassy_net::new(
+                    interfaces.station,
+                    embassy_net::Config::dhcpv4(Default::default()),
+                    resources,
+                    seed,
+                );
+                // 0.10:#[task] 函数返回 Result<SpawnToken,_>(池满则 Err);各起一次,unwrap 安全。
+                spawner.spawn(net_task(runner).unwrap());
+                spawner.spawn(wifi_conn(controller).unwrap());
+                spawner.spawn(bridge_task(stack).unwrap());
+                info!("WiFi/bridge 任务已起(SSID={})", config::WIFI_SSID);
+            }
+            Err(e) => warn!("esp_radio::wifi::new 失败:{e:?}"),
+        }
     } else {
-        warn!("Echo Base not detected (ES8311 0x18 no ACK) — mic capture needs it attached");
+        warn!("未配置 WiFi/bridge(构建时传 VIBIRD_WIFI_SSID/PASS/BRIDGE_ADDR);离线轮播表情");
     }
 
-    // ---- Precompute the gradient backdrop once (static); copy it each frame ----
-    let bg_top = Rgb565::new(21, 42, 44);
-    let bg_bot = Rgb565::new(15, 33, 40);
-    let mut backdrop: Vec<Rgb565> = alloc::vec![Rgb565::BLACK; (W * H) as usize];
-    for y in 0..H {
-        let c = lerp_col(bg_top, bg_bot, y as f32 / H as f32);
-        for x in 0..W {
-            backdrop[(y * W + x) as usize] = c;
-        }
-    }
-
-    // 主路径:播放内嵌表情包(区域刷新);解析失败则回退到抗锯齿矢量占位动画。
-    match Pack::parse(PLACEHOLDER) {
-        Ok(pack) => {
-            let (cw, ch) = pack.canvas();
-            info!(
-                "emote pack: {} clips, canvas {}x{}",
-                pack.clip_count(),
-                cw,
-                ch
-            );
-            let mut player = Player::new(pack);
-            const STEP_MS: u32 = 5;
-            let mut fps_t0 = Instant::now();
-            let mut frames_n: u32 = 0;
-            // 无网络时:每 2.5s 轮播展示全部表情;按住按键则切 listening。将来语音/SetState 替代。
-            let mut clip_t0 = Instant::now();
-            let mut was_held = false;
-            loop {
-                if let Some(frame) = player.tick(STEP_MS) {
-                    // 只刷脏矩形 —— 区域刷新
-                    for r in frame.rects() {
-                        let x1 = r.x + r.w.saturating_sub(1);
-                        let y1 = r.y + r.h.saturating_sub(1);
-                        display
-                            .set_pixels(r.x, r.y, x1, y1, r.pixels_rgb565().map(rgb565_from_raw))
-                            .ok();
-                    }
-                    frames_n += 1;
-                }
-                // 按键 push-to-talk(GPIO41 低有效):按住 → listening 表情。
-                // 将来此处采 Echo Base 麦克风(ES8311 + I2S)并经 WebSocket 上传给桥接。
-                let held = button.is_low();
-                if held && !was_held {
-                    player.set_clip("listening");
-                    info!("PTT down → listening (es8311_present={es8311_present})");
-                } else if !held && was_held {
-                    info!("PTT up");
-                    clip_t0 = Instant::now();
-                }
-                was_held = held;
-                if fps_t0.elapsed() >= Duration::from_millis(1000) {
-                    info!(
-                        "vibird emote: {} frames/s (btn={held} echo_base={es8311_present})",
-                        frames_n
-                    );
-                    frames_n = 0;
-                    fps_t0 = Instant::now();
-                }
-                if !held && clip_t0.elapsed() >= Duration::from_millis(2500) {
-                    player.next_clip();
-                    if let Some(c) = player.clip() {
-                        info!("emote clip → {}", c.name());
-                    }
-                    clip_t0 = Instant::now();
-                }
-                delay.delay_millis(STEP_MS);
-            }
-        }
+    // ---- 显示循环(本任务)----
+    let pack = match Pack::parse(PLACEHOLDER) {
+        Ok(pk) => pk,
         Err(_) => {
-            // 回退:抗锯齿矢量占位动画
-            let mut fb = Fb::new();
-            let start = Instant::now();
-            let mut fps_t0 = Instant::now();
-            let mut fps_n: u32 = 0;
+            warn!("表情包解析失败;停在黑屏");
             loop {
-                let t = start.elapsed().as_millis() as f32 / 1000.0;
-                fb.px.copy_from_slice(&backdrop);
-                draw_vibird(&mut fb, t);
+                Timer::after(Duration::from_secs(1)).await;
+            }
+        }
+    };
+    let (cw, ch) = pack.canvas();
+    info!("emote pack: {} clips, canvas {cw}x{ch}", pack.clip_count());
+    let mut player = Player::new(pack);
+    const STEP_MS: u32 = 5;
+    let mut clip_t0 = Instant::now();
+    let mut was_held = false;
+    let mut fps_t0 = Instant::now();
+    let mut frames_n = 0u32;
+    loop {
+        // 1. bridge 下行状态 → 切表情(在线时唯一的表情驱动源)
+        if let Some(st) = STATE_SIG.try_take() {
+            let name = clip_for(&st);
+            player.set_clip(name);
+            clip_t0 = Instant::now();
+            info!("SetState → {name}");
+        }
+        // 2. tick + 区域刷新(只刷脏矩形)
+        if let Some(frame) = player.tick(STEP_MS) {
+            for r in frame.rects() {
+                let x1 = r.x + r.w.saturating_sub(1);
+                let y1 = r.y + r.h.saturating_sub(1);
                 display
-                    .set_pixels(0, 0, W as u16 - 1, H as u16 - 1, fb.px.iter().copied())
+                    .set_pixels(r.x, r.y, x1, y1, r.pixels_rgb565().map(rgb565_from_raw))
                     .ok();
-                fps_n += 1;
-                if fps_t0.elapsed() >= Duration::from_millis(1000) {
-                    info!("vibird: {} fps", fps_n);
-                    fps_n = 0;
-                    fps_t0 = Instant::now();
+            }
+            frames_n += 1;
+        }
+        // 3. PTT 本地即时反馈(Gate 5 再接 ES8311 麦克风上传)
+        let held = button.is_low();
+        if held && !was_held {
+            player.set_clip("listening");
+            info!("PTT down");
+        } else if !held && was_held {
+            info!("PTT up");
+            clip_t0 = Instant::now();
+        }
+        was_held = held;
+        // 4. fps 日志
+        if fps_t0.elapsed() >= Duration::from_secs(1) {
+            info!("emote {frames_n} fps (online={online})");
+            frames_n = 0;
+            fps_t0 = Instant::now();
+        }
+        // 5. 离线时自动轮播展示全部表情;在线时只由 SetState 驱动
+        if !online && !held && clip_t0.elapsed() >= Duration::from_millis(2500) {
+            player.next_clip();
+            clip_t0 = Instant::now();
+        }
+        Timer::after(Duration::from_millis(STEP_MS as u64)).await;
+    }
+}
+
+/// embassy-net 协议栈后台任务。
+#[embassy_executor::task]
+async fn net_task(mut runner: Runner<'static, Interface<'static>>) {
+    runner.run().await
+}
+
+/// WiFi STA 连接 / 断线重连。
+#[embassy_executor::task]
+async fn wifi_conn(mut controller: WifiController<'static>) {
+    let cfg = WifiConfig::Station(
+        StationConfig::default()
+            .with_ssid(config::WIFI_SSID)
+            .with_password(String::from(config::WIFI_PASS)),
+    );
+    if let Err(e) = controller.set_config(&cfg) {
+        warn!("WiFi set_config 失败:{e:?}");
+    }
+    loop {
+        if !controller.is_connected() {
+            match controller.connect_async().await {
+                Ok(_) => info!("WiFi 已连接 → {}", config::WIFI_SSID),
+                Err(e) => {
+                    warn!("WiFi 连接失败:{e:?};5s 后重试");
+                    Timer::after(Duration::from_secs(5)).await;
                 }
             }
         }
+        Timer::after(Duration::from_secs(2)).await;
+    }
+}
+
+/// 连 bridge:TCP → WebSocket 握手 → Hello → 循环收下行,SetState 经 STATE_SIG 驱动表情。
+#[embassy_executor::task]
+async fn bridge_task(stack: Stack<'static>) {
+    stack.wait_config_up().await;
+    if let Some(cfg) = stack.config_v4() {
+        info!("DHCP 拿到 IP = {}", cfg.address);
+    }
+    let Some((octets, port)) = config::parse_bridge_addr() else {
+        warn!("bridge 地址解析失败:{}", config::BRIDGE_ADDR);
+        return;
+    };
+    let ep = IpEndpoint::new(
+        IpAddress::Ipv4(Ipv4Addr::new(octets[0], octets[1], octets[2], octets[3])),
+        port,
+    );
+    let host = config::BRIDGE_ADDR;
+
+    let mut rx = [0u8; 2048];
+    let mut tx = [0u8; 2048];
+    loop {
+        let mut sock = TcpSocket::new(stack, &mut rx, &mut tx);
+        info!("连 bridge {host} …");
+        if let Err(e) = sock.connect(ep).await {
+            warn!("TCP 连接失败:{e:?};3s 重试");
+            Timer::after(Duration::from_secs(3)).await;
+            continue;
+        }
+        if let Err(e) = ws::connect(&mut sock, host).await {
+            warn!("WS 握手失败:{e:?};3s 重试");
+            Timer::after(Duration::from_secs(3)).await;
+            continue;
+        }
+        info!("WebSocket 已连上 bridge");
+
+        // 发 Hello
+        let hello = Uplink::Hello {
+            device_id: String::from("atoms3r-vibird"),
+            fw_version: String::from(env!("CARGO_PKG_VERSION")),
+            protocol: PROTOCOL_VERSION,
+            caps: Caps {
+                mic: true,
+                speaker: false,
+                display: true,
+                imu: false,
+            },
+        };
+        match serde_json::to_string(&hello) {
+            Ok(json) => {
+                if ws::send_text(&mut sock, &json).await.is_err() {
+                    warn!("发 Hello 失败;重连");
+                    continue;
+                }
+            }
+            Err(_) => continue,
+        }
+
+        // 收下行帧
+        let mut buf = [0u8; 1024];
+        loop {
+            match ws::read_frame(&mut sock, &mut buf).await {
+                Ok((ws::TEXT, n)) => match serde_json::from_slice::<Downlink>(&buf[..n]) {
+                    Ok(Downlink::Welcome { protocol, .. }) => info!("Welcome(proto={protocol})"),
+                    Ok(Downlink::SetState(state)) => STATE_SIG.signal(state),
+                    Ok(Downlink::Ping { nonce }) => {
+                        if let Ok(j) = serde_json::to_string(&Uplink::Pong { nonce }) {
+                            let _ = ws::send_text(&mut sock, &j).await;
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(_) => warn!("下行 JSON 解析失败"),
+                },
+                Ok((ws::PING, n)) => {
+                    let _ = ws::send_pong(&mut sock, &buf[..n]).await;
+                }
+                Ok((ws::CLOSE, _)) => {
+                    warn!("bridge 关闭了连接;重连");
+                    break;
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    warn!("读帧错误:{e:?};重连");
+                    break;
+                }
+            }
+        }
+        Timer::after(Duration::from_secs(2)).await;
     }
 }
