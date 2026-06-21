@@ -62,7 +62,7 @@ For the precise current state (what's built and hardware-verified), see
 
 ## License
 
-Vibird is **dual-licensed** (the same model as [Ultralytics](https://github.com/ultralytics/ultralytics)):
+Vibird is **dual-licensed**:
 
 - **AGPL-3.0** for open-source and community use — see [`LICENSE`](LICENSE). Note the AGPL's network clause:
   if you run a modified Vibird as a network service, you must release your source under the AGPL.

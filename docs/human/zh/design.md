@@ -7,25 +7,25 @@
 > 之后 Cursor / Codex);它用高刷新、有表情的动画显示 Agent 的实时状态;危险操作你按一下物理确认 / 拒绝。
 > 设备上的角色是 **Liz「栗子」**(二次元半身萌妹子,见 [ADR-0005](../../agent/adr/ADR-0005-character-liz.md))。
 
-状态:**设计草案**(2026-06)。许可:**AGPL-3.0 + 商用**(Ultralytics 式双授权;见 `LICENSE` / `README`)。
+状态:**设计草案**(2026-06)。许可:**AGPL-3.0 + 商用双授权**(见 `LICENSE` / `README`)。
 
 ---
 
 ## 1. 为什么是 Vibird —— 定位
 
-市场调研(2026-06)的结论:最显而易见的点子 ——「**Claude 桌宠 + 端侧批准/拒绝**」—— 已经被
-**Anthropic 官方占住**(`anthropics/claude-desktop-buddy`:ESP32 + BLE,会睡醒、闹脾气、端侧 approve/deny),
-还有商用产品 + 6 个以上社区移植。再做一个 = 跟平台方正面相撞 → 电子垃圾。
+市场调研(2026-06):最显而易见的点子 ——「**Claude 桌宠 + 端侧批准/拒绝**」—— **已被平台方覆盖**
+(`anthropics/claude-desktop-buddy`:ESP32 + BLE,会睡醒、闹脾气、端侧 approve/deny,还有商用产品 + 多个
+社区移植)。所以 Vibird 另辟蹊径。
 
 **Vibird 刻意打调研发现的三个真空:**
 
 - **A —— 语音输入。** 现在所有 ESP32 语音助手都接 OpenAI / Gemini / Qwen;所有 Claude 语音工具都是纯软件。
   **没有人把 ESP32 麦克风做成 Claude Code 的一等输入。**
 - **B —— 跨 Agent。** Cursor / Copilot / Codex 完全没有硬件控制。
-- **C —— 零配置(灵魂)。** `pip install`,然后 **Agent 读一个内置 skill 自己把设备配好**。配置摩擦是开发者硬件
-  的头号杀手;Vibird 把它变成卖点。没有竞品在做。
+- **C —— 零配置。** `pip install`,然后 **Agent 读一个内置 skill 自己把设备配好**。配置摩擦是开发者硬件
+  最大的痛点;Vibird 把它变成卖点。没有竞品在做。
 
-**设计法则**(从「赢家 vs 电子垃圾」分析里提炼,不可妥协):
+**设计法则**(不可妥协):
 
 1. **窄而可靠。** 把一件事 —— 语音 + 状态 —— 做到极致。不要试图取代任何东西。
 2. **被动优先。** 一眼看到 Agent 状态;主动输入(语音 / 按键)是加分项,不是负担。
@@ -120,7 +120,7 @@ awaiting / done / error)一一对应。
   **不用 Zephyr**(见 ADR-0002)。
 - **分发:** Claude Code **插件**(hooks + skills + 根 `.mcp.json`,一键装)+ `pip install vibird`(bridge)
   + `cargo install vibird`。
-- **许可:** **AGPL-3.0**(社区)+ **商用许可**(Ultralytics 模式)+ **CLA**。所有依赖保持宽松
+- **许可:** **AGPL-3.0**(社区)+ **商用许可** + **CLA**。所有依赖保持宽松
   (MIT/Apache/BSD),商用再授权才干净。
 - **构建网络:** crates.io / PyPI 经路由器透明代理直连(rsproxy / 清华镜像兜底);GitHub 可达。
 
@@ -132,7 +132,7 @@ awaiting / done / error)一一对应。
 |---|---|
 | **v0.1 语音闭环** | S3R 长按说话 → 注入 Claude Code;基础 idle/listening/thinking 表情。**前置去风险 spike:** (1) 纯 Rust 动画 —— ✅ **已完成**(99/53 fps);(2) esp-wifi WS 音频流可靠性 —— ⏳ 待做。 |
 | **v0.2 状态 + 物理批准** | hooks 把 Agent 状态推到设备;`PreToolUse` 物理 allow/deny。 |
-| **v0.3 零配置** | Claude Code 插件 + pip 包;Agent 自己配设备。**← 灵魂。** |
+| **v0.3 零配置** | Claude Code 插件 + pip 包;Agent 自己配设备。**← 核心差异点。** |
 | **v0.4 跨 Agent** | Cursor / Codex 适配。 |
 | **v0.5 商用级** | Liz 表情打磨、AGPL/CLA/文档站、OTA、离线降级、量产打包。 |
 

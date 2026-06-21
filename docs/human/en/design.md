@@ -9,27 +9,27 @@
 > The on-device character is **Liz「栗子」**, a 2D-anime companion (see
 > [ADR-0005](../../agent/adr/ADR-0005-character-liz.md)).
 
-Status: **design draft** (2026-06). License: **AGPL-3.0 + commercial** (Ultralytics-style dual license; see `LICENSE` / `README`).
+Status: **design draft** (2026-06). License: **AGPL-3.0 + commercial** dual license (see `LICENSE` / `README`).
 
 ---
 
 ## 1. Why Vibird — positioning
 
-Market scan (2026-06) headline: the obvious idea — a *"Claude desk pet + on-device approve/deny"* — is
-**already officially owned by Anthropic** (`anthropics/claude-desktop-buddy`: ESP32 + BLE, sleeps/wakes/shows
-impatience, on-device approve-deny) with a commercial product and 6+ community ports. Building another = a
-head-on collision with the platform owner → e-waste.
+Market scan (2026-06): the obvious idea — a *"Claude desk pet + on-device approve/deny"* — is
+**already covered by the platform** (`anthropics/claude-desktop-buddy`: ESP32 + BLE, sleeps/wakes/shows
+impatience, on-device approve-deny, plus a commercial product and several community ports). So Vibird aims
+elsewhere.
 
 **Vibird deliberately targets the three real gaps the scan found empty:**
 
 - **A — Voice in.** Every ESP32 voice assistant today talks to OpenAI / Gemini / Qwen; every Claude voice tool
   is software-only. **Nobody has made an ESP32 microphone a first-class dictation input for Claude Code.**
 - **B — Cross-agent.** Cursor / Copilot / Codex have *no* hardware control at all.
-- **C — Zero-config (the soul).** `pip install`, then **the agent reads a bundled skill and configures the
+- **C — Zero-config.** `pip install`, then **the agent reads a bundled skill and configures the
   device itself**. Config friction is the #1 killer of developer hardware; Vibird turns it into the headline
   feature. No competitor is doing this.
 
-**Design laws** (distilled from the "winners vs e-waste" analysis — non-negotiable):
+**Design laws** (non-negotiable):
 
 1. **Narrow + reliable.** Do one thing — voice + status — extremely well. Don't try to replace anything.
 2. **Passive-first.** A glance tells you the agent's state; active input (voice / button) is the bonus, not the burden.
@@ -131,7 +131,7 @@ ours**:
   ES8311 codec; BMI270 IMU; RGB. **Not Zephyr** (see ADR-0002).
 - **Distribution:** a Claude Code **plugin** (hooks + skills + root `.mcp.json`, one-command install) +
   `pip install vibird` (the bridge) + `cargo install vibird`.
-- **License:** **AGPL-3.0** (community) + **commercial license** (Ultralytics model) + **CLA**. All
+- **License:** **AGPL-3.0** (community) + **commercial license** + **CLA**. All
   dependencies kept permissive (MIT/Apache/BSD) so commercial relicensing stays clean.
 - **Build network:** crates.io / PyPI reachable directly via the router's transparent proxy (rsproxy /
   Tsinghua mirrors as fallback). GitHub reachable.
@@ -144,7 +144,7 @@ ours**:
 |---|---|
 | **v0.1 Voice loop** | S3R hold-to-talk → injected into Claude Code; basic idle/listening/thinking emotes. **De-risking spikes:** (1) pure-Rust animation on real S3R — ✅ **done** (99/53 fps); (2) esp-wifi WebSocket audio streaming reliability — ⏳ open. |
 | **v0.2 Status + physical approve** | Hooks push agent state to the device; `PreToolUse` physical allow/deny. |
-| **v0.3 Zero-config** | Claude Code plugin + pip package; the agent configures the device. **← the soul.** |
+| **v0.3 Zero-config** | Claude Code plugin + pip package; the agent configures the device. **← the key differentiator.** |
 | **v0.4 Cross-agent** | Cursor / Codex adapters. |
 | **v0.5 Commercial-grade** | Liz emote polish, AGPL/CLA/docs site, OTA, offline degradation, packaging. |
 
