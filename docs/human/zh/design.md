@@ -80,7 +80,7 @@ flowchart LR
 
 ## 3. 角色 —— Liz「栗子」
 
-设备的脸是 **Liz「栗子」** —— 一个 **17 岁的二次元女孩**(详见 [ADR-0005](../../agent/adr/ADR-0005-character-liz.md)):
+设备的脸是 **Liz「栗子」** —— 一个 **二次元女孩**(详见 [ADR-0005](../../agent/adr/ADR-0005-character-liz.md)):
 
 - **发型:** 黑中长直。
 - **着装:** 喜欢 **Lolita「女儿服」** 和 **JK 水手服**。

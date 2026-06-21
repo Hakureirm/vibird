@@ -67,3 +67,7 @@ Vibird 采用 **双授权**:
 
 欢迎贡献。由于 Vibird 是双授权,贡献者需同意 [贡献者许可协议(CLA)](CLA.md),以便项目能提供商用许可。
 (首次 PR 时 CLA 机器人会引导你。)
+
+## Star 增长
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Hakureirm/vibird&type=Date)](https://star-history.com/#Hakureirm/vibird&Date)

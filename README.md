@@ -79,3 +79,7 @@ Vibird is **dual-licensed**:
 Contributions are welcome. Because Vibird is dual-licensed, contributors must agree to the
 [Contributor License Agreement](CLA.md) so the project can offer the commercial license. (A CLA bot will
 guide you on your first pull request.)
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Hakureirm/vibird&type=Date)](https://star-history.com/#Hakureirm/vibird&Date)

@@ -29,7 +29,7 @@ done / error).
 
 ## Decision
 
-The mascot is **Liz「栗子」** — a **17-year-old 2D-anime girl**:
+The mascot is **Liz「栗子」** — a **2D-anime girl**:
 
 - **Hair:** black, medium-long, straight (黑中长直).
 - **Wardrobe:** loves **Lolita「女儿服」** and **JK sailor uniforms (水手服)**.

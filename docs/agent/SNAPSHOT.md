@@ -52,7 +52,7 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
   pack format (`.veap`) + host packer + region-flush player** (Option C). Firmware stays no_std esp-hal pure
   Rust (ADR-0002 preserved). We do *not* use Espressif's C stack / browser tool, and this path does *not*
   resolve the esp-wifi risk.
-- **Character** ([ADR-0005](adr/ADR-0005-character-liz.md)): the mascot is **Liz「栗子」** — a 17-y/o
+- **Character** ([ADR-0005](adr/ADR-0005-character-liz.md)): the mascot is **Liz「栗子」** — a
   2D-anime girl (黑中长直; Lolita 女儿服 + JK 水手服), half-body, telegram-smooth emotes. "Vibird" stays the
   product name.
 

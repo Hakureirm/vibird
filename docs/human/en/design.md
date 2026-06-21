@@ -85,7 +85,7 @@ Three layers:
 
 ## 3. Character — Liz「栗子」
 
-The device's face is **Liz「栗子」** — a **17-year-old 2D-anime girl** (full art bible in
+The device's face is **Liz「栗子」** — a **2D-anime girl** (full art bible in
 [ADR-0005](../../agent/adr/ADR-0005-character-liz.md)):
 
 - **Hair:** black, medium-long, straight (黑中长直).
