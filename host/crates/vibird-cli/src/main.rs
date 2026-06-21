@@ -107,8 +107,12 @@ fn main() -> Result<()> {
                 }
             }
         }
-        // TODO: 下面这些桩在 v0.1–v0.3 落地。
-        Cmd::Mcp => println!("TODO MCP server (rmcp, stdio)"),
+        Cmd::Mcp => {
+            // 最小 MCP 服务器(stdio):把设备工具暴露给 Claude Code。
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(vibird_bridge::run_mcp(vibird_bridge::DEFAULT_PORT))?;
+        }
+        // TODO: 下面这些桩在后续版本落地(需硬件 / OS 细节)。
         Cmd::Config => println!("TODO serial device configuration"),
         Cmd::Service { .. } => println!("TODO service install (launchd/systemd)"),
         Cmd::Claude { action } => match action {

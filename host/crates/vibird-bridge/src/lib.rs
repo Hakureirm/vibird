@@ -18,9 +18,11 @@ use vibird_protocol::{AgentState, Downlink, Uplink, PROTOCOL_VERSION};
 mod asr;
 mod hook;
 mod inject;
+mod mcp;
 pub use asr::{Asr, CloudConfig};
-pub use hook::{hook_event_to_state, push_state};
+pub use hook::{hook_event_to_state, push_downlink, push_state};
 pub use inject::Inject;
+pub use mcp::run as run_mcp;
 
 /// 桥接默认 WebSocket 端口(设备连这里)。
 pub const DEFAULT_PORT: u16 = 8137;

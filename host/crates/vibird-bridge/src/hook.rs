@@ -22,15 +22,20 @@ pub fn hook_event_to_state(event: &str, tool: Option<String>) -> Option<AgentSta
     }
 }
 
-/// 连接控制面(`127.0.0.1:control_port`)并推一条状态(单行 JSON)。
-pub async fn push_state(control_port: u16, state: AgentState) -> Result<()> {
+/// 连接控制面(`127.0.0.1:control_port`)并推一条 [`Downlink`](单行 JSON)。
+pub async fn push_downlink(control_port: u16, d: Downlink) -> Result<()> {
     let mut stream = TcpStream::connect(("127.0.0.1", control_port))
         .await
         .with_context(|| format!("连不上控制面 127.0.0.1:{control_port}(桥接在运行吗?)"))?;
-    let line = serde_json::to_string(&Downlink::SetState(state))? + "\n";
+    let line = serde_json::to_string(&d)? + "\n";
     stream.write_all(line.as_bytes()).await?;
     stream.flush().await?;
     Ok(())
+}
+
+/// 推一条状态([`push_downlink`] 的便捷封装)。
+pub async fn push_state(control_port: u16, state: AgentState) -> Result<()> {
+    push_downlink(control_port, Downlink::SetState(state)).await
 }
 
 #[cfg(test)]

@@ -63,8 +63,9 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
 - **Host bridge** (`host/`): **voice loop + status display built (host side)** ✓ — WS server + audio
   framing + pluggable ASR (stub / cloud Whisper) + tmux injection (`vibird serve --tmux … --asr …`); plus a
   local **control plane** (TCP) + `vibird hook` that pushes agent-state to the device face from Claude Code
-  hooks. Still TODO: mDNS advertise, MCP server, the Claude plugin manifest, and **device-side** audio
-  capture (firmware WiFi/WS/I2S) for true end-to-end.
+  hooks; the **MCP server** (`vibird mcp`, hand-rolled stdio JSON-RPC) and the **Claude Code plugin**
+  (`claude-plugin/`: hooks + MCP + zero-config skill) are built ✓. Still TODO: mDNS advertise, the
+  `config`/`service` CLI subcommands, and **device-side** audio capture (firmware WiFi/WS/I2S) for end-to-end.
 
 ## Documentation map
 
