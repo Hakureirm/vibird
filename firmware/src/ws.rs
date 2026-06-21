@@ -16,7 +16,9 @@ use embedded_io_async::{Read, Write};
 pub const TEXT: u8 = 0x1;
 pub const BINARY: u8 = 0x2;
 pub const CLOSE: u8 = 0x8;
+#[allow(dead_code)] // 拆分读写后没主动回 ping;留着备用 + 文档化协议
 pub const PING: u8 = 0x9;
+#[allow(dead_code)]
 pub const PONG: u8 = 0xA;
 
 /// 固定 `Sec-WebSocket-Key`:base64(0x01,0x02,…,0x10)。可信局域网客户端无需随机。
@@ -125,7 +127,8 @@ pub async fn send_binary<T: Write>(io: &mut T, data: &[u8]) -> Result<(), WsErro
     write_frame(io, BINARY, data).await
 }
 
-/// 发一个 PONG 帧(回应服务端 Ping)。
+/// 发一个 PONG 帧(回应服务端 Ping)。拆分读写后暂未主动用,留作备用。
+#[allow(dead_code)]
 pub async fn send_pong<T: Write>(io: &mut T, data: &[u8]) -> Result<(), WsError<T::Error>> {
     write_frame(io, PONG, data).await
 }

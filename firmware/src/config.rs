@@ -28,6 +28,10 @@ pub const BRIDGE_ADDR: &str = match option_env!("VIBIRD_BRIDGE_ADDR") {
 /// 桥接默认 WebSocket 端口(与 host 侧 `vibird_bridge::DEFAULT_PORT` 一致)。
 pub const DEFAULT_BRIDGE_PORT: u16 = 8137;
 
+/// 麦克风调试模式(编译期 `VIBIRD_MIC_TEST=1`):忽略按键,自动循环采集 / 上传,
+/// 方便没法按按键时验证麦克风采集 + 音频格式。正式构建不设此变量。
+pub const MIC_TEST: bool = option_env!("VIBIRD_MIC_TEST").is_some();
+
 /// 配置是否齐全(SSID + bridge 地址都非空)。
 pub fn is_configured() -> bool {
     !WIFI_SSID.is_empty() && !BRIDGE_ADDR.is_empty()

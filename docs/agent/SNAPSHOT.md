@@ -97,8 +97,13 @@ The whole **"speak → ASR → inject into Claude Code"** loop is **closed and v
   `Hello`** (bridge logs `hello from atoms3r-vibird`), and **every pushed `SetState`
   (idle/listening/thinking/working/awaiting_approval/done/error) drives the device face** — the
   status-display half of the loop is **closed on hardware**. WiFi creds inject at build time
-  (`VIBIRD_WIFI_SSID/PASS/BRIDGE_ADDR` via `config.rs`). **Only remaining device half: Gate 5 — ES8311 + I2S
-  mic capture → WS PCM upload** (the hardware voice uplink).
+  (`VIBIRD_WIFI_SSID/PASS/BRIDGE_ADDR` via `config.rs`). **Gate 5 also HW-verified (2026-06-21):** PTT button
+  → **ES8311 mic (analog) + I2S RX (Data32, one-shot DMA into a static DMA buffer) → mono-i16 16 kHz PCM →
+  WS binary upload → the bridge's mlx-whisper transcribes it recognizably → tmux inject**. The **full hardware
+  voice loop is closed** (speak → device → ASR → inject). Notes: the Echo Base speaker PA (NS4150B via the
+  PI4IOE5V6408 @0x43) is **muted** for this record-only device; audio quality has room to refine (the
+  one-shot per-chunk DMA leaves small gaps — a circular path would be gap-free). **With Gates 1–5 the AtomS3R
+  is a complete Vibird device** (voice in + status face), end-to-end on real hardware.
 - Still TODO: mDNS advertise, `config`/`service` CLI, the mic-capture upload above (the last device half).
 
 ## Documentation map
@@ -129,8 +134,10 @@ The whole **"speak → ASR → inject into Claude Code"** loop is **closed and v
 
 ## Roadmap status (vs design §4)
 
-- **v0.1 voice loop:** **software loop closed + E2E-tested on Mac (2026-06-21)** — `simulate` device +
-  local mlx-whisper ASR + tmux inject, verified. Remaining: device firmware mic capture (the hardware half).
+- **v0.1 voice loop:** **closed end-to-end on REAL HARDWARE (2026-06-21)** — the AtomS3R does PTT → ES8311
+  mic → I2S → WiFi/WS → mlx-whisper ASR → tmux inject (Gate 5), plus the status-display downlink driving the
+  face (Gates 1–4). The Mac-only `simulate` software loop also passes. Refinements left: audio quality
+  (gap-free DMA), mDNS discovery, serial `config` provisioning, real Liz art.
 - **Spikes:** animation ✓, colours ✓ (HW-confirmed). **esp-wifi WS streaming spike — open** (ADR-0004
   Option C does not resolve it).
 
