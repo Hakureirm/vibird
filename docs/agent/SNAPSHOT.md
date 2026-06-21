@@ -39,8 +39,8 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
 - **Colours: fixed AND user-confirmed on hardware (2026-06-21)** — the panel is BGR + Normal inversion
   ([finding-gc9107-color-order](findings/finding-gc9107-color-order.md)).
 - Current device render: the firmware drives the **.veap `Player`** (region-flush) playing an embedded
-  procedural placeholder (breathing dot); the AA-vector renderer is the no-pack fallback. Built for xtensa;
-  not flashed this iteration (device offline).
+  procedural placeholder (breathing dot); the AA-vector renderer is the no-pack fallback. **Flashed +
+  verified on real hardware (2026-06-21): ~23 fps** (`/dev/cu.usbmodem101`, serial `vibird emote: 23 frames/s`).
 
 ## Decisions just locked (2026-06-21)
 
@@ -56,8 +56,9 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
 
 - **Emote pipeline** (ADR-0004): **complete** ✓ — the `.veap` format + `vibird-emote` crate (parser +
   `Player` + packer-lib, 6 tests) + the `vibird-emote-pack` CLI (GIF→.veap, e2e-verified) + the **firmware
-  region-flush player** (embeds `assets/placeholder.veap`, builds for xtensa). Remaining: on-device flash
-  (device was offline) + real **Liz art** (Live2D).
+  region-flush player** (embeds `assets/placeholder.veap`). **HW-verified on the real AtomS3R (2026-06-21):
+  the placeholder plays at ~23 fps via region-flush** (serial: `vibird emote: 23 frames/s`). Remaining: real
+  **Liz art** (Live2D).
 - **Liz art** (ADR-0005): not produced; **the production approach (Live2D / commission / AI) is the next
   decision.**
 - **Host bridge** (`host/`): **voice loop + status display built (host side)** ✓ — WS server + audio
