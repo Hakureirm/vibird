@@ -203,9 +203,12 @@ async fn main(spawner: Spawner) {
                         }
                         Err(e) => warn!("ES8311 初始化失败:{e:?}(麦克风不可用)"),
                     }
-                    // 静音 Echo Base 喇叭功放(PI4IOE5V6408 @0x43 → NS4150B)——录音设备别让喇叭滋滋响
-                    let _ = base.write(0x43u8, &[0x03, 0x6F]); // P0..P3 方向=输出
-                    let _ = base.write(0x43u8, &[0x05, 0x00]); // 输出全低 → 功放关断(静音)
+                    // 关断 Echo Base 喇叭功放(PI4IOE5V6408 @0x43 → NS4150B)。录音设备不发声;
+                    // 否则采集时 DAC/功放放噪声(破音)。完整配 GPIO 扩展器(对齐 M5 pi4ioe_init)再拉低使能脚:
+                    let _ = base.write(0x43u8, &[0x07, 0x00]); // 输出驱动使能(0=驱动,非高阻)—— 之前漏了这条,功放没真关
+                    let _ = base.write(0x43u8, &[0x0D, 0xFF]); // 上拉选择
+                    let _ = base.write(0x43u8, &[0x03, 0x6F]); // 方向:输出
+                    let _ = base.write(0x43u8, &[0x05, 0x00]); // 输出全低 → NS4150B SD 脚拉低 = 关断(静音)
                 }
                 // ---- I2S RX(BCLK=8 WS=6 DIN=7;16kHz;32bit slot;异步 DMA,PTT 时一次性读)----
                 // 4088 字节(≤CHUNK 4092 → 单描述符;8 的倍数 → 整 stereo 帧);读进这块**静态 DMA 缓冲**
