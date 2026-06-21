@@ -206,7 +206,7 @@ async fn handle_conn(
                                 info!("approval {request_id} -> {decision:?}");
                                 // TODO(v0.2): 用此决定解决挂起的 PreToolUse hook。
                             }
-                            Uplink::Gesture { kind } => debug!("gesture: {kind:?}"),
+                            Uplink::Gesture { kind } => info!("gesture: {kind:?}"),
                             Uplink::Pong { nonce } => debug!("pong {nonce}"),
                         }
                     }

@@ -107,6 +107,12 @@ The whole **"speak → ASR → inject into Claude Code"** loop is **closed and v
   PI4IOE5V6408 @0x43) is **muted** for this record-only device; audio quality has room to refine (the
   one-shot per-chunk DMA leaves small gaps — a circular path would be gap-free). **With Gates 1–5 the AtomS3R
   is a complete Vibird device** (voice in + status face), end-to-end on real hardware.
+- **Physical-approval pillar (the 3rd pillar) built (2026-06-21):** the **BMI270 IMU** (`bmi2` 0.1.2, I2C0
+  @0x68 — shares the bus with the LP5562 backlight, which writes once then hands the bus to the IMU) is
+  initialised on-device (8 KB config blob upload OK, gyro @100 Hz ±500 dps). A no_std integer gesture
+  detector (`gesture.rs`, two-reversal state machine) maps **nod → Approval(Allow) / shake → Approval(Deny)**
+  when an `AwaitingApproval` is pending, else `Uplink::Gesture`. **BMI270 init HW-verified; the gesture
+  axis/threshold still needs a physical nod/shake calibration pass** (nod guessed as gyro-Y, shake as gyro-Z).
 - Still TODO: serial `config`/`service` CLI (so WiFi creds aren't build-time either — the last config gap).
 
 ## Documentation map

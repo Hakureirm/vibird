@@ -22,6 +22,8 @@ extern crate alloc;
 // config.rs / ws.rs 在 src/ 下(放 src/bin/ 会被 cargo 当成独立 binary),用 #[path] 引入。
 #[path = "../config.rs"]
 mod config;
+#[path = "../gesture.rs"]
+mod gesture;
 #[path = "../mdns.rs"]
 mod mdns;
 #[path = "../ws.rs"]
@@ -29,8 +31,13 @@ mod ws;
 
 use alloc::string::String;
 use core::net::Ipv4Addr;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
+use bmi2::config::BMI270_CONFIG_FILE;
+use bmi2::types::{
+    Burst, GyrBwp, GyrConf, GyrRange, GyrRangeVal, Odr, OisRange, PerfMode, PwrCtrl,
+};
+use bmi2::{Bmi2, I2cAddr};
 use embassy_executor::Spawner;
 use embassy_futures::select::{Either, select};
 use embassy_net::tcp::TcpSocket;
@@ -62,7 +69,9 @@ use mipidsi::interface::SpiInterface;
 use mipidsi::models::GC9107;
 use mipidsi::options::{ColorInversion, ColorOrder};
 use vibird_emote::{Pack, Player};
-use vibird_protocol::{AgentState, AudioFormat, Caps, Downlink, PROTOCOL_VERSION, Uplink};
+use vibird_protocol::{
+    AgentState, AudioFormat, Caps, Decision, Downlink, GestureKind, PROTOCOL_VERSION, Uplink,
+};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -78,6 +87,12 @@ static STATE_SIG: Signal<CriticalSectionRawMutex, AgentState> = Signal::new();
 
 /// 按住 PTT 期间为 true(显示循环按按键置位 → bridge_task 据此上传麦克风音频)。
 static MIC_ON: AtomicBool = AtomicBool::new(false);
+
+/// 显示循环检测到的 IMU 手势 → bridge_task 发送(有待确认发 Approval,否则发 Gesture)。
+static GESTURE: Signal<CriticalSectionRawMutex, GestureKind> = Signal::new();
+
+/// 当前待物理确认的 request_id(0 = 无);收到 AwaitingApproval 下行时设置。
+static PENDING_APPROVAL: AtomicU32 = AtomicU32::new(0);
 
 /// 把值放进 'static StaticCell,返回 &'static mut(embassy 任务 / 资源需要 'static)。
 macro_rules! mk_static {
@@ -115,8 +130,8 @@ async fn main(spawner: Spawner) {
     esp_alloc::heap_allocator!(size: 72 * 1024);
     let mut delay = Delay::new();
 
-    // ---- 背光 LP5562(内部 I2C SDA=45 SCL=0)----
-    {
+    // ---- 背光 LP5562 + BMI270 IMU 共用内部 I2C0(SDA=45 SCL=0)。背光只写一次,之后总线归 IMU ----
+    let (mut imu, imu_ok) = {
         let mut i2c = I2c::new(p.I2C0, I2cConfig::default())
             .unwrap()
             .with_sda(p.GPIO45)
@@ -126,7 +141,38 @@ async fn main(spawner: Spawner) {
         let _ = i2c.write(LP5562_ADDR, &[0x70, 0x00]);
         let _ = i2c.write(LP5562_ADDR, &[0x0E, 0xC0]);
         info!("backlight (LP5562) on");
-    }
+        // 把内部 I2C 移交给 BMI270(@0x68;背光后续不再用总线),上传 8KB 配置 blob 后配陀螺仪。
+        let mut imu =
+            Bmi2::<_, _, 256>::new_i2c(i2c, Delay::new(), I2cAddr::Default, Burst::new(255));
+        let ok = match imu.init(&BMI270_CONFIG_FILE) {
+            Ok(()) => {
+                let _ = imu.set_pwr_ctrl(PwrCtrl {
+                    acc_en: false,
+                    gyr_en: true,
+                    aux_en: false,
+                    temp_en: false,
+                });
+                let _ = imu.disable_power_save();
+                let _ = imu.set_gyr_conf(GyrConf {
+                    odr: Odr::Odr100,
+                    bwp: GyrBwp::Norm,
+                    noise_perf: PerfMode::Perf,
+                    filter_perf: PerfMode::Perf,
+                });
+                let _ = imu.set_gyr_range(GyrRange {
+                    range: GyrRangeVal::Range500,
+                    ois_range: OisRange::Range250,
+                });
+                info!("BMI270 IMU 初始化 ok(点头=确认 / 摇头=拒绝)");
+                true
+            }
+            Err(e) => {
+                warn!("BMI270 初始化失败:{e:?}(手势不可用)");
+                false
+            }
+        };
+        (imu, ok)
+    };
 
     // ---- 显示 GC9107(SPI2)----
     let spi = Spi::new(
@@ -265,6 +311,8 @@ async fn main(spawner: Spawner) {
     let mut frames_n = 0u32;
     let mut mic_t0 = Instant::now();
     let mut mic_test_on = false;
+    let mut detector = gesture::Detector::new();
+    let mut imu_tick = 0u32;
     loop {
         // 1. bridge 下行状态 → 切表情(在线时唯一的表情驱动源)
         if let Some(st) = STATE_SIG.try_take() {
@@ -306,6 +354,17 @@ async fn main(spawner: Spawner) {
                     player.set_clip("listening");
                 }
                 mic_t0 = Instant::now();
+            }
+        }
+        // 3b. IMU 手势(每 ~10ms 读一次陀螺仪):点头/摇头 → GESTURE(bridge_task 发 Approval / Gesture)
+        if imu_ok {
+            imu_tick = imu_tick.wrapping_add(1);
+            if imu_tick.is_multiple_of(2)
+                && let Ok(g) = imu.get_gyr_data()
+                && let Some(kind) = detector.update(g.x, g.y, g.z)
+            {
+                info!("IMU 手势:{kind:?}");
+                GESTURE.signal(kind);
             }
         }
         // 4. fps 日志
@@ -417,7 +476,7 @@ async fn bridge_task(
                 mic: true,
                 speaker: false,
                 display: true,
-                imu: false,
+                imu: true,
             },
         };
         match serde_json::to_string(&hello) {
@@ -442,7 +501,17 @@ async fn bridge_task(
                         Ok(Downlink::Welcome { protocol, .. }) => {
                             info!("Welcome(proto={protocol})")
                         }
-                        Ok(Downlink::SetState(state)) => STATE_SIG.signal(state),
+                        Ok(Downlink::SetState(state)) => {
+                            // 记录待物理确认的 request_id(IMU 点头/摇头据此回 Approval)。
+                            PENDING_APPROVAL.store(
+                                match state {
+                                    AgentState::AwaitingApproval { request_id, .. } => request_id,
+                                    _ => 0,
+                                },
+                                Ordering::Relaxed,
+                            );
+                            STATE_SIG.signal(state);
+                        }
                         Ok(_) => {}
                         Err(_) => warn!("下行 JSON 解析失败"),
                     },
@@ -499,6 +568,25 @@ async fn bridge_task(
                             let _ = ws::send_text(&mut writer, &j).await;
                         }
                         sending = false;
+                    }
+                    // IMU 手势:待确认(AwaitingApproval)时回 Approval(摇头=Deny,点头=Allow),否则发 Gesture。
+                    if let Some(g) = GESTURE.try_take() {
+                        let pend = PENDING_APPROVAL.load(Ordering::Relaxed);
+                        let msg = if pend != 0 {
+                            let decision = match g {
+                                GestureKind::Shake => Decision::Deny,
+                                _ => Decision::Allow,
+                            };
+                            Uplink::Approval {
+                                request_id: pend,
+                                decision,
+                            }
+                        } else {
+                            Uplink::Gesture { kind: g }
+                        };
+                        if let Ok(j) = serde_json::to_string(&msg) {
+                            let _ = ws::send_text(&mut writer, &j).await;
+                        }
                     }
                     Timer::after(Duration::from_millis(20)).await; // 空闲让出
                 }

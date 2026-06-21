@@ -41,6 +41,9 @@ serde_json = { version = "1", default-features = false, features = ["alloc"] }
 # ES8311 音频编解码器驱动(no_std,embedded-hal 1.0)—— Echo Base 麦克风
 es8311 = "0.1.0"
 
+# BMI270 IMU 驱动(no_std,embedded-hal 1.0)—— 点头/摇头手势(物理确认)
+bmi2 = "0.1.2"
+
 # WiFi + 异步运行时(esp-hal 1.1 栈:esp-radio 取代 esp-wifi,esp-rtos 取代 esp-hal-embassy)
 esp-radio = { version = "=0.18.0", features = ["esp32s3", "wifi", "unstable", "esp-alloc"] }
 esp-rtos  = { version = "=0.3.0",  features = ["esp32s3", "embassy", "esp-radio", "esp-alloc"] }
