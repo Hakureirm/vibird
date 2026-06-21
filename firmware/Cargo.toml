@@ -33,8 +33,6 @@ libm = "0.2"
 
 # 表情包解析 + 播放器(no_std,无 alloc 的解析/播放;只用默认特性 = 不带 std)
 vibird-emote = { path = "../emote", default-features = false }
-# BMI270 IMU 驱动(no_std,embedded-hal 1.0,自带 8KB config blob)—— 重力自动正立
-bmi2 = "0.1"
 
 
 # For fine tuning these settings, please refer to https://doc.rust-lang.org/cargo/reference/profiles.html

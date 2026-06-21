@@ -62,16 +62,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bmi2"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48eb062697fa0234a96acdc8ed34f141e9f2951d34e358ed449f312d7e5b6469"
-dependencies = [
- "embedded-hal 1.0.0",
- "fixedvec",
-]
-
-[[package]]
 name = "bytemuck"
 version = "1.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -741,12 +731,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fixedvec"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b395ef2adf62bdeefcd1b59ad0dd2225c6c333ec79656ea79ac5285c46d051ea"
-
-[[package]]
 name = "float-cmp"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1403,7 +1387,6 @@ version = "0.1.0"
 name = "vibird-firmware"
 version = "0.1.0"
 dependencies = [
- "bmi2",
  "critical-section",
  "embedded-graphics",
  "embedded-hal 1.0.0",
