@@ -24,13 +24,14 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
 
 ## Repo state
 
-- **Verified at:** `eb40d35` (firmware code state). Docs evolve on top in `docs:` commits. Branch `main`,
-  **published 2026-06-21 → https://github.com/Hakureirm/vibird** (public, AGPL; pushed over SSH, `gh`
-  installed). ~21 commits.
-- **Commits:** `fadc439` foundation · `3589e8e` host skeleton · `ee95b5f` firmware spike · `eb40d35`
-  firmware vector + BGR fix · `fc08b82` docs (snapshot/ADRs/findings) · + the current restructure commit.
-- **Builds:** `vibird-protocol` (2 tests ✓) · `host/` (`cargo check` ✓) · `firmware/` (xtensa build ✓,
-  flashed to real AtomS3R).
+- **HEAD:** `f7a8613` on `main`, **public at https://github.com/Hakureirm/vibird** (AGPL; pushed over SSH).
+  The `feat/firmware-wifi` line (Gates 1–5 + the embassy/WiFi/mic firmware) was fast-forward-merged into
+  `main` on 2026-06-21. ~27 commits.
+- **Firmware-wifi commits:** `bb111b6` Gate 1 (embassy + esp-radio/esp-rtos/embassy-net + ws.rs) · `87f8382`
+  Gates 1–4 HW-verified · `a16ce4d` Gate 5 mic uplink (ES8311+I2S → WS PCM) · `2a3e1c2` mute ES8311 DAC ·
+  `3ea4db7` full PI4IOE speaker-PA shutdown · `f7a8613` docs sync.
+- **Builds:** `vibird-protocol` (2 tests ✓) · `host/` (5-gate ✓) · `firmware/` (xtensa release ✓, **the full
+  WiFi+mic firmware flashed + Gates 1–5 verified on the real AtomS3R**).
 
 ## What works (verified on hardware)
 
