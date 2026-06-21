@@ -6,6 +6,7 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
@@ -28,9 +29,17 @@ enum Cmd {
         /// tmux target (session/window/pane) to inject transcripts into; omit to only log.
         #[arg(long)]
         tmux: Option<String>,
-        /// ASR backend: `stub` (placeholder) or `cloud` (reads VIBIRD_ASR_* env).
+        /// ASR backend: `stub` / `cloud` (VIBIRD_ASR_* env) / `local` (mlx-whisper via VIBIRD_ASR_SCRIPT).
         #[arg(long, default_value = "stub")]
         asr: String,
+    },
+    /// Simulate a device: stream a WAV's PCM to the bridge (test the voice loop end-to-end).
+    Simulate {
+        /// WAV file (16 kHz mono PCM) to stream as push-to-talk audio.
+        audio: PathBuf,
+        /// Bridge port.
+        #[arg(long, default_value_t = vibird_bridge::DEFAULT_PORT)]
+        port: u16,
     },
     /// Internal: handle a Claude Code hook event (invoked by the installed plugin).
     Hook {
@@ -77,6 +86,7 @@ fn main() -> Result<()> {
         Cmd::Serve { port, tmux, asr } => {
             let asr = match asr.as_str() {
                 "cloud" => vibird_bridge::Asr::cloud_from_env()?,
+                "local" => vibird_bridge::Asr::local_from_env()?,
                 _ => vibird_bridge::Asr::stub(),
             };
             let inject = match tmux {
@@ -86,6 +96,10 @@ fn main() -> Result<()> {
             let config = vibird_bridge::Config { asr, inject };
             let rt = tokio::runtime::Runtime::new()?;
             rt.block_on(vibird_bridge::serve(port, config))?;
+        }
+        Cmd::Simulate { audio, port } => {
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(vibird_bridge::simulate(port, &audio))?;
         }
         Cmd::Hook { event } => {
             // 读 Claude Code 经 stdin 传入的 hook JSON,取 tool_name;映射成状态后经控制面推给设备。

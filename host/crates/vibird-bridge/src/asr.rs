@@ -2,8 +2,8 @@
 //!
 //! - `Stub`:返回固定文本,用来在没有模型 / 网络时跑通整条语音闭环。
 //! - `Cloud`:OpenAI Whisper 兼容的 `/audio/transcriptions`(把 PCM 包成 WAV 后 multipart 上传)。
-//!
-//! 本地 MLX(parakeet / whisper)属于 Python 侧,后续以 sidecar 形式接入;v0.1 用 stub + cloud 覆盖。
+//! - `Local`:本地 mlx-whisper(Mac M 系),shell 出去跑 `scripts/asr_local.py`(读 WAV → 打印文本),
+//!   纯本地、零网络、零云。配合 `vibird simulate` 可在没有硬件时端到端自测语音闭环。
 
 use anyhow::{Context, Result};
 
@@ -19,6 +19,17 @@ pub struct CloudConfig {
     pub language: Option<String>,
 }
 
+/// 本地 ASR 配置(shell 出去跑 mlx-whisper 脚本)。
+#[derive(Clone)]
+pub struct LocalConfig {
+    /// python 解释器。
+    pub python: String,
+    /// 转写脚本路径(读 WAV → 打印文本)。
+    pub script: String,
+    /// HF 模型(如 `mlx-community/whisper-tiny`)。
+    pub model: String,
+}
+
 /// ASR 后端。
 #[derive(Clone)]
 pub enum Asr {
@@ -26,6 +37,8 @@ pub enum Asr {
     Stub { canned: String },
     /// 云端 Whisper 兼容。
     Cloud(CloudConfig),
+    /// 本地 mlx-whisper(经脚本)。
+    Local(LocalConfig),
 }
 
 impl Default for Asr {
@@ -57,11 +70,26 @@ impl Asr {
         }))
     }
 
+    /// 从环境变量装配本地后端:`VIBIRD_ASR_PY` / `VIBIRD_ASR_SCRIPT` / `VIBIRD_ASR_MODEL`。
+    pub fn local_from_env() -> Result<Self> {
+        let python = std::env::var("VIBIRD_ASR_PY").unwrap_or_else(|_| "python3".to_string());
+        let script = std::env::var("VIBIRD_ASR_SCRIPT")
+            .context("缺环境变量 VIBIRD_ASR_SCRIPT(本地转写脚本路径,如 scripts/asr_local.py)")?;
+        let model = std::env::var("VIBIRD_ASR_MODEL")
+            .unwrap_or_else(|_| "mlx-community/whisper-tiny".to_string());
+        Ok(Asr::Local(LocalConfig {
+            python,
+            script,
+            model,
+        }))
+    }
+
     /// 把单声道 16-bit PCM(给定采样率)转写成文本。
     pub async fn transcribe(&self, pcm: &[i16], sample_rate: u32) -> Result<String> {
         match self {
             Asr::Stub { canned } => Ok(canned.clone()),
             Asr::Cloud(c) => cloud_transcribe(c, pcm, sample_rate).await,
+            Asr::Local(c) => local_transcribe(c, pcm, sample_rate).await,
         }
     }
 }
@@ -117,6 +145,33 @@ async fn cloud_transcribe(c: &CloudConfig, pcm: &[i16], sample_rate: u32) -> Res
         .unwrap_or_default()
         .trim()
         .to_string())
+}
+
+/// 本地转写:把 PCM 写成临时 WAV,shell 出去跑 mlx-whisper 脚本,读 stdout。
+async fn local_transcribe(c: &LocalConfig, pcm: &[i16], sample_rate: u32) -> Result<String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let wav = pcm_to_wav(pcm, sample_rate);
+    let path = std::env::temp_dir().join(format!(
+        "vibird_asr_{}_{}.wav",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    tokio::fs::write(&path, &wav).await?;
+    let out = tokio::process::Command::new(&c.python)
+        .arg(&c.script)
+        .arg(&path)
+        .arg(&c.model)
+        .output()
+        .await
+        .context("启动本地 ASR 脚本失败")?;
+    let _ = tokio::fs::remove_file(&path).await;
+    anyhow::ensure!(
+        out.status.success(),
+        "本地 ASR 失败:{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
 #[cfg(test)]

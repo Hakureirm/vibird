@@ -46,6 +46,21 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
   full-frame rotate cost too much fps for too little value, so region-flush was kept. The BMI270 **does**
   work and sits at I2C **0x68** on this unit (chip `0x24`), noted in `atoms3r-hardware.md` if ever revisited.)
 
+## Voice loop — closed end-to-end (full software chain, verified on Mac 2026-06-21)
+
+The whole **"speak → ASR → inject into Claude Code"** loop is **closed and verified on the Mac**, zero hardware:
+
+- `vibird simulate <wav>` impersonates a device: connects to the bridge → streams a WAV's PCM (push-to-talk)
+  → receives state downlinks.
+- The bridge runs **local ASR** (`--asr local` → shells out to `scripts/asr_local.py` = mlx-whisper, fully
+  local, no network, no cloud).
+- **E2E run:** Mac `say "list all the python files in this folder"` → `afconvert` 16 kHz mono → `simulate`
+  streams it → bridge logs `ASR → "List all the python files in this folder."` → the text lands via `tmux`
+  injection. State sequence `Idle → Listening → Thinking → Working` drives the device face. In a real Claude
+  Code session that sentence *is* the prompt.
+- Gap: only the **device firmware** side of mic capture (ES8311 + I2S + WiFi/WS) is unbuilt; `simulate`
+  stands in for it for software testing.
+
 ## Decisions just locked (2026-06-21)
 
 - **Rendering architecture** ([ADR-0004](adr/ADR-0004-on-device-rendering.md)): **pure-Rust, our own emote
@@ -65,12 +80,13 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
   2.5 s; serial: `emote clip → listening …`). Remaining: real **Liz art** (Live2D).
 - **Liz art** (ADR-0005): not produced; **the production approach (Live2D / commission / AI) is the next
   decision.**
-- **Host bridge** (`host/`): **voice loop + status display built (host side)** ✓ — WS server + audio
-  framing + pluggable ASR (stub / cloud Whisper) + tmux injection (`vibird serve --tmux … --asr …`); plus a
-  local **control plane** (TCP) + `vibird hook` that pushes agent-state to the device face from Claude Code
-  hooks; the **MCP server** (`vibird mcp`, hand-rolled stdio JSON-RPC) and the **Claude Code plugin**
-  (`claude-plugin/`: hooks + MCP + zero-config skill) are built ✓. The **`pip install` scaffold**
-  (`python/`, PyO3 + maturin, `vibird.serve(...)`) builds ✓ too.
+- **Host bridge** (`host/`): **voice loop + status display built (host side), and the software loop is now
+  E2E-closed (see above)** ✓ — WS server + audio framing + pluggable ASR (stub / cloud Whisper / **local
+  mlx-whisper**) + tmux injection (`vibird serve --tmux … --asr …`) + **`vibird simulate <wav>`** (device
+  impersonator for HW-free self-test); plus a local **control plane** (TCP) + `vibird hook` that pushes
+  agent-state to the device face from Claude Code hooks; the **MCP server** (`vibird mcp`, hand-rolled stdio
+  JSON-RPC) and the **Claude Code plugin** (`claude-plugin/`: hooks + MCP + zero-config skill) are built ✓.
+  The **`pip install` scaffold** (`python/`, PyO3 + maturin, `vibird.serve(...)`) builds ✓ too.
 - **Device-side audio (in progress):** button **push-to-talk** (GPIO41) drives the `listening` emote ✓; the
   **Atomic Echo Base is detected present on hardware** (ES8311 @0x18 + PI4IOE @0x43, base I2C 38/39) ✓. Next:
   ES8311 + I2S mic capture (16 kHz PCM; `es8311` crate ready) → WiFi/WS upload to the bridge.
@@ -104,7 +120,8 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
 
 ## Roadmap status (vs design §4)
 
-- **v0.1 voice loop:** not started. Firmware animation spike done; host voice loop pending.
+- **v0.1 voice loop:** **software loop closed + E2E-tested on Mac (2026-06-21)** — `simulate` device +
+  local mlx-whisper ASR + tmux inject, verified. Remaining: device firmware mic capture (the hardware half).
 - **Spikes:** animation ✓, colours ✓ (HW-confirmed). **esp-wifi WS streaming spike — open** (ADR-0004
   Option C does not resolve it).
 
@@ -113,13 +130,15 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
 1. **Decide Liz's art-production approach** (Live2D / commission / AI) — unblocks the whole character track.
 2. Build the emote pipeline: `.veap` format spec → `vibird-emote-pack` packer → firmware region-flush player.
 3. ~~Bilingual human docs~~ — ✅ done (design / getting-started / hardware / index, en + zh).
-4. ~~Host v0.1 voice loop (ASR + tmux injection)~~ — ✅ host side done; **device-side audio capture** (firmware WiFi/WS/I2S) is the remaining half.
+4. ~~Host v0.1 voice loop (ASR + tmux injection)~~ — ✅ **software loop closed + E2E-tested on Mac** (`simulate` + local mlx-whisper + tmux inject); **device-side audio capture** (firmware WiFi/WS/I2S) is the remaining half.
 5. **esp-wifi WS streaming** spike.
-6. github: install `gh`, then push.
+6. ~~github: install `gh`, then push~~ — ✅ published 2026-06-21 → github.com/Hakureirm/vibird.
 
 ## Build / flash quickref
 
 - host: `cd host && cargo run -- serve`
+- **voice loop self-test (no hardware):** term A — `VIBIRD_ASR_SCRIPT=scripts/asr_local.py vibird serve --asr local --tmux <sess>`;
+  term B — `say "list the python files" -o /tmp/c.aiff && afconvert /tmp/c.aiff -f WAVE -d LEI16@16000 /tmp/c.wav && vibird simulate /tmp/c.wav`.
 - firmware: `. ~/export-esp.sh && cd firmware && cargo run --release` (builds + flashes via espflash)
 - network: keep `all_proxy`/`http_proxy` **unset** (router transparent proxy; explicit proxy double-wraps
   and fails). crates.io / github / raw.githubusercontent.com reach directly.

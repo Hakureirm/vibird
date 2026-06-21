@@ -4,7 +4,7 @@
 //! - **状态显示**(v0.2):一个本地**控制面**(TCP,`control_port`),Claude Code hook(`vibird hook`)
 //!   或 MCP 把 [`Downlink`] 推进来,桥接广播给所有连着的设备,驱动表情。
 //!
-//! ASR 可插拔(stub / cloud)。mDNS 广播待做。
+//! ASR 可插拔(stub / cloud / local mlx-whisper)。没有硬件时用 [`simulate`] 推一段 WAV 端到端自测。mDNS 广播待做。
 
 use anyhow::Result;
 use futures_util::{SinkExt, StreamExt};
@@ -194,6 +194,74 @@ async fn handle_conn(
                     Message::Ping(p) => tx.send(Message::Pong(p)).await?,
                     Message::Close(_) => break,
                     _ => {}
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 从 WAV 文件取出 PCM 数据(找 `data` chunk)。
+fn read_wav_pcm(path: &std::path::Path) -> Result<Vec<u8>> {
+    let bytes = std::fs::read(path)?;
+    let pos = bytes
+        .windows(4)
+        .position(|w| w == b"data")
+        .ok_or_else(|| anyhow::anyhow!("WAV 没有 data chunk:{}", path.display()))?;
+    let start = pos + 8; // "data" + 4 字节长度
+    Ok(bytes
+        .get(start..)
+        .ok_or_else(|| anyhow::anyhow!("WAV data 截断"))?
+        .to_vec())
+}
+
+/// **模拟一台设备**:连上 bridge,推一段 WAV 的 PCM(push-to-talk),打印 bridge 回推的状态。
+/// 没有真硬件时用它端到端自测语音闭环(配合 Mac `say` 生成的音频)。
+pub async fn simulate(port: u16, wav: &std::path::Path) -> Result<()> {
+    use vibird_protocol::{AgentState, AudioFormat, Caps};
+    let url = format!("ws://127.0.0.1:{port}");
+    info!("simulate device → {url}  (audio {})", wav.display());
+    let (mut ws, _) = tokio_tungstenite::connect_async(&url)
+        .await
+        .map_err(|e| anyhow::anyhow!("连不上 bridge {url}:{e}"))?;
+    ws.send(Message::text(serde_json::to_string(&Uplink::Hello {
+        device_id: "sim-device".into(),
+        fw_version: "0.0.0".into(),
+        protocol: PROTOCOL_VERSION,
+        caps: Caps {
+            mic: true,
+            speaker: false,
+            display: true,
+            imu: false,
+        },
+    })?))
+    .await?;
+    let pcm = read_wav_pcm(wav)?;
+    info!("push-to-talk: {} bytes PCM", pcm.len());
+    ws.send(Message::text(serde_json::to_string(&Uplink::AudioStart {
+        sample_rate: 16_000,
+        format: AudioFormat::Pcm16Le,
+    })?))
+    .await?;
+    for chunk in pcm.chunks(2048) {
+        ws.send(Message::binary(chunk.to_vec())).await?;
+    }
+    ws.send(Message::text(serde_json::to_string(&Uplink::AudioEnd)?))
+        .await?;
+    // 收 bridge 回推的状态,直到一轮结束(Working / Idle / Error)或超时。
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
+    while let Ok(Some(Ok(msg))) = tokio::time::timeout_at(deadline, ws.next()).await {
+        if let Message::Text(t) = msg {
+            if let Ok(d) = serde_json::from_str::<Downlink>(&t) {
+                info!("← {d:?}");
+                // 只在一轮真正结束时停(转写后的 Working / Error / Done);开头的问候 Idle 不算。
+                if matches!(
+                    d,
+                    Downlink::SetState(
+                        AgentState::Working { .. } | AgentState::Error { .. } | AgentState::Done
+                    )
+                ) {
+                    break;
                 }
             }
         }

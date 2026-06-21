@@ -11,7 +11,7 @@ repository = "https://github.com/Hakureirm/vibird"
 
 [workspace.dependencies]
 vibird-protocol = { path = "../protocol", features = ["std"] }
-tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "sync", "io-util", "io-std", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "sync", "io-util", "io-std", "fs", "process", "time"] }
 tokio-tungstenite = "0.24"
 futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
