@@ -87,8 +87,27 @@ fn main() -> Result<()> {
             let rt = tokio::runtime::Runtime::new()?;
             rt.block_on(vibird_bridge::serve(port, config))?;
         }
-        // TODO: the stubs below land across v0.1–v0.3.
-        Cmd::Hook { event } => println!("TODO hook handler: {event}"),
+        Cmd::Hook { event } => {
+            // 读 Claude Code 经 stdin 传入的 hook JSON,取 tool_name;映射成状态后经控制面推给设备。
+            use std::io::Read;
+            let mut buf = String::new();
+            let _ = std::io::stdin().read_to_string(&mut buf);
+            let tool = serde_json::from_str::<serde_json::Value>(&buf)
+                .ok()
+                .and_then(|v| {
+                    v.get("tool_name")
+                        .and_then(|t| t.as_str())
+                        .map(String::from)
+                });
+            if let Some(state) = vibird_bridge::hook_event_to_state(&event, tool) {
+                let rt = tokio::runtime::Runtime::new()?;
+                let cport = vibird_bridge::control_port(vibird_bridge::DEFAULT_PORT);
+                if let Err(e) = rt.block_on(vibird_bridge::push_state(cport, state)) {
+                    eprintln!("vibird hook: {e}"); // 只告警,绝不阻断 Claude Code
+                }
+            }
+        }
+        // TODO: 下面这些桩在 v0.1–v0.3 落地。
         Cmd::Mcp => println!("TODO MCP server (rmcp, stdio)"),
         Cmd::Config => println!("TODO serial device configuration"),
         Cmd::Service { .. } => println!("TODO service install (launchd/systemd)"),

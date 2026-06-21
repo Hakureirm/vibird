@@ -60,10 +60,11 @@ desk-pet space leaves open (**Claude-native voice · cross-agent · zero-config*
   (device was offline) + real **Liz art** (Live2D).
 - **Liz art** (ADR-0005): not produced; **the production approach (Live2D / commission / AI) is the next
   decision.**
-- **Host bridge** (`host/`): the **v0.1 voice loop is built (host side)** ✓ — WS server + audio framing +
-  pluggable ASR (stub / cloud Whisper) + tmux injection + agent-state push
-  (`vibird serve --tmux … --asr …`). Still TODO: mDNS advertise, MCP server, Claude Code hooks, and the
-  **device-side** audio capture (firmware WiFi/WS/I2S) for true end-to-end.
+- **Host bridge** (`host/`): **voice loop + status display built (host side)** ✓ — WS server + audio
+  framing + pluggable ASR (stub / cloud Whisper) + tmux injection (`vibird serve --tmux … --asr …`); plus a
+  local **control plane** (TCP) + `vibird hook` that pushes agent-state to the device face from Claude Code
+  hooks. Still TODO: mDNS advertise, MCP server, the Claude plugin manifest, and **device-side** audio
+  capture (firmware WiFi/WS/I2S) for true end-to-end.
 
 ## Documentation map
 
